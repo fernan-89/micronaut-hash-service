@@ -8,6 +8,7 @@ import com.thinklab.infrastructure.adapter.in.web.dto.request.DeactivateHashRequ
 import com.thinklab.infrastructure.adapter.in.web.dto.request.GenerateHashRequest;
 import com.thinklab.infrastructure.adapter.in.web.dto.request.ReactivateHashRequest;
 import com.thinklab.infrastructure.adapter.in.web.dto.request.RevokeHashRequest;
+import com.thinklab.infrastructure.adapter.in.web.dto.response.DeactivateHashResponse;
 import com.thinklab.infrastructure.adapter.in.web.dto.response.HashResponse;
 import com.thinklab.infrastructure.adapter.in.web.dto.response.PagedHashResponse;
 import io.micronaut.core.annotation.Nullable;
@@ -108,14 +109,14 @@ public class HashController {
     @Patch("/{id}/deactivate")
     @Operation(summary = "Deactivate a hash", description = "Transitions an active hash to INACTIVE status.")
     @ApiResponse(responseCode = "200", description = "Hash deactivated successfully")
-    public Mono<HttpResponse<HashResponse>> deactivate(
+    public Mono<HttpResponse<DeactivateHashResponse>> deactivate(
             @PathVariable String id,
             @Body @Valid DeactivateHashRequest request) {
 
         log.warn("REST Request: Deactivation intent for ID [{}] authorized by [{}]", id, request.executor());
 
         return deactivateHashUseCase.execute(request.toCommand(id))
-                .map(HashResponse::fromDomain)
+                .map(token -> DeactivateHashResponse.fromDomain(token, request.executor(), request.reason())) // <-- Assim!
                 .map(HttpResponse::ok);
     }
 

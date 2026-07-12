@@ -2,6 +2,9 @@ package com.thinklab.domain.model;
 
 import com.thinklab.domain.valueobject.HashAlgorithm;
 import com.thinklab.domain.valueobject.HashStatus;
+import io.micronaut.data.annotation.Id;
+import io.micronaut.data.annotation.TypeDef;
+import io.micronaut.data.model.DataType;
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
 
@@ -22,6 +25,8 @@ import java.util.Objects;
  * </ul>
  */
 public record HashToken(
+        @Id
+        @TypeDef(type = DataType.UUID) // Força o Micronaut/Mongo a codificar a String como BSON Binary UUID
         @Nonnull String id,
         @Nonnull String tenantId,
         @Nonnull String sourceService,

@@ -18,6 +18,7 @@ micronaut:
 
 mongodb:
   uri: ${MONGODB_URI:mongodb://localhost:27017/hash_service}
+  uuid-representation: STANDARD
   connection-pool:
     max-size: 100
     min-size: 10

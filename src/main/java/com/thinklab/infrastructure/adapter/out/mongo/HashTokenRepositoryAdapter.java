@@ -14,6 +14,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Persistence Adapter: Implementation of the {@link HashTokenRepositoryPort} for MongoDB.
@@ -22,10 +23,10 @@ import java.util.Objects;
  *
  * <p><b>Architectural Role (NASA Standards):</b></p>
  * <ul>
- *     <li><b>Anti-Corruption Layer (ACL):</b> Bidirectional mapping between Domain Aggregates
- *         and Infrastructure Entities.</li>
- *     <li><b>Reactive Ready:</b> Non-blocking execution optimized for Project Reactor streams.</li>
- *     <li><b>Data Integrity:</b> Leverages the repository's support for versioning and indexing.</li>
+ * <li><b>Anti-Corruption Layer (ACL):</b> Bidirectional mapping between Domain Aggregates
+ * and Infrastructure Entities.</li>
+ * <li><b>Reactive Ready:</b> Non-blocking execution optimized for Project Reactor streams.</li>
+ * <li><b>Data Integrity:</b> Leverages the repository's support for versioning and indexing.</li>
  * </ul>
  */
 @Slf4j
@@ -36,7 +37,7 @@ public class HashTokenRepositoryAdapter implements HashTokenRepositoryPort {
     private final HashTokenMongoRepository repository;
 
     /**
-     * Persists a hash aggregate into the MongoDB collection.
+     * Persists a newly created hash aggregate into the MongoDB collection.
      *
      * @param hashToken The pure domain aggregate to be saved.
      * @return A {@link Mono} emitting the persisted domain aggregate.
@@ -45,7 +46,7 @@ public class HashTokenRepositoryAdapter implements HashTokenRepositoryPort {
     @Nonnull
     public Mono<HashToken> save(@Nonnull HashToken hashToken) {
         Objects.requireNonNull(hashToken, "HashToken aggregate is mandatory for persistence");
-        log.debug("Persistence Adapter: Saving hash token for tenant [{}]", hashToken.tenantId());
+        log.debug("Persistence Adapter: Saving new hash token for tenant [{}]", hashToken.tenantId());
 
         return repository.save(HashTokenEntity.fromDomain(hashToken))
                 .map(HashTokenEntity::toDomain)
@@ -54,7 +55,31 @@ public class HashTokenRepositoryAdapter implements HashTokenRepositoryPort {
     }
 
     /**
+     * Updates an existing hash aggregate in the MongoDB collection.
+     * 🚀 STAFF ENGINEER NOTE: Separating save (INSERT) from update (UPDATE) prevents
+     * E11000 duplicate key errors when dealing with manually assigned UUIDs.
+     *
+     * @param hashToken The modified domain aggregate to be updated.
+     * @return A {@link Mono} emitting the updated domain aggregate.
+     */
+    @Nonnull
+    @Override
+    public Mono<HashToken> update(@Nonnull HashToken hashToken) {
+        Objects.requireNonNull(hashToken, "HashToken aggregate is mandatory for update");
+        log.debug("Persistence Adapter: Updating hash token for tenant [{}]", hashToken.tenantId());
+
+        // AQUI ESTÁ A MÁGICA: Usamos repository.update() para forçar a substituição no Mongo
+        return repository.update(HashTokenEntity.fromDomain(hashToken))
+                .map(HashTokenEntity::toDomain)
+                .doOnError(e -> log.error("Persistence Error: Failed to update hash token for tenant [{}]",
+                        hashToken.tenantId(), e));
+    }
+
+    /**
      * Retrieves a hash token by its primary identifier.
+     * 🚀 STAFF ENGINEER NOTE: A conversão defensiva de String para UUID protege a pipeline
+     * reativa. Se o cliente enviar um ID que não seja UUID, retornamos vazio (404 Not Found),
+     * evitando um 500 Internal Server Error e exceções desnecessárias.
      *
      * @param id The unique system identifier.
      * @return A {@link Mono} emitting the found hash token or empty if not present.
@@ -65,8 +90,17 @@ public class HashTokenRepositoryAdapter implements HashTokenRepositoryPort {
         Objects.requireNonNull(id, "Identifier is mandatory for retrieval");
         log.trace("Persistence Adapter: Fetching hash registry by ID [{}]", id);
 
-        return repository.findById(id)
-                .map(HashTokenEntity::toDomain);
+        try {
+            // A PONTE DE PEDÁGIO: Traduzindo a String do Domínio para o UUID da Infraestrutura
+            UUID nativeId = UUID.fromString(id);
+
+            return repository.findById(nativeId)
+                    .map(HashTokenEntity::toDomain);
+
+        } catch (IllegalArgumentException e) {
+            log.warn("Persistence Adapter: Invalid UUID format provided for retrieval [{}]", id);
+            return Mono.empty(); // Formato inválido significa que o dado não existe no banco.
+        }
     }
 
     /**
@@ -113,4 +147,4 @@ public class HashTokenRepositoryAdapter implements HashTokenRepositoryPort {
         return repository.findByTenantIdAndStatus(tenantId, status, pageable)
                 .map(HashTokenEntity::toDomain);
     }
-}
+}

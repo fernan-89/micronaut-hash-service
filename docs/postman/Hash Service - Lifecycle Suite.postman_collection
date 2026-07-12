@@ -1,0 +1,260 @@
+{
+  "info": {
+    "_postman_id": "2b46a71b-2cda-4564-b7a3-5bcbdd141e02",
+    "name": "Hash Service - Lifecycle Suite (Nível NASA)",
+    "description": "Suite E2E de testes para o HashController. Valida o fluxo completo: Geração -> Recuperação -> Listagem -> Ciclo de Vida (Deactivate/Reactivate) -> Revogação.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "39879181"
+  },
+  "item": [
+    {
+      "name": "01. Generate Hash",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status 201 Created\", () => pm.response.to.have.status(201));",
+              "const jsonData = pm.response.json();",
+              "pm.environment.set(\"hashId\", jsonData.id);",
+              "pm.test(\"Hash ID was generated\", () => pm.expect(jsonData.id).to.not.be.undefined);"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"tenantId\": \"tenant-123\",\n    \"payload\": \"dado-de-teste-{{$randomAlphaNumeric}}\",\n    \"algorithm\": \"SHA3_256\",\n    \"sourceService\": \"mobile-app\",\n    \"executor\": \"test-user-01\",\n    \"asSerialKey\": true\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/hashes",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "hashes"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "02. Get Hash By ID",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
+              "pm.test(\"ID matches environment\", () => pm.expect(pm.response.json().id).to.eql(pm.environment.get(\"hashId\")));"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/hashes/{{hashId}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "hashes",
+            "{{hashId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "03. List Tenant Hashes",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Returns list\", () => pm.expect(pm.response.json()).to.be.an('object'));"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Tenant-Id",
+            "value": "tenant-123"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/hashes?page=0&size=20",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "hashes"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "0"
+            },
+            {
+              "key": "size",
+              "value": "20"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "04. Deactivate Hash",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"executor\": \"admin-user\",\n    \"reason\": \"Manutenção programada\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/hashes/{{hashId}}/deactivate",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "hashes",
+            "{{hashId}}",
+            "deactivate"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "05. Reactivate Hash",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"executor\": \"admin-user\",\n    \"reason\": \"Retorno à operação\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/hashes/{{hashId}}/reactivate",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "hashes",
+            "{{hashId}}",
+            "reactivate"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "06. Revoke Hash",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
+              "pm.environment.unset(\"hashId\");"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"executor\": \"security-admin\",\n    \"reason\": \"Comprometimento de segurança\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/hashes/{{hashId}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "hashes",
+            "{{hashId}}"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    }
+  ]
+}

@@ -27,12 +27,12 @@ import java.util.UUID;
  *
  * <p><b>Architectural Patterns:</b></p>
  * <ul>
- *     <li><b>CPU Offloading:</b> Uses {@code Schedulers.parallel()} for cryptographic
- *         computations to maintain Netty's responsiveness [1].</li>
- *     <li><b>Atomic Pipeline:</b> Ensures that a hash is only considered "created"
- *         if both the registry and the audit trail are persisted [2].</li>
- *     <li><b>Idempotency Check:</b> Prevents duplicate active hashes for the same
- *         tenant and payload [3].</li>
+ * <li><b>CPU Offloading:</b> Uses {@code Schedulers.parallel()} for cryptographic
+ * computations to maintain Netty's responsiveness [1].</li>
+ * <li><b>Atomic Pipeline:</b> Ensures that a hash is only considered "created"
+ * if both the registry and the audit trail are persisted [2].</li>
+ * <li><b>Idempotency Check:</b> Prevents duplicate active hashes for the same
+ * tenant and payload [3].</li>
  * </ul>
  */
 @Slf4j
@@ -71,9 +71,12 @@ public class GenerateHashInteractor implements GenerateHashUseCase {
                     if (command.asSerialKey()) {
                         generatedHash = formatAsSerialKey(generatedHash);
                     }
-                    String id = UUID.randomUUID().toString();
+
+                    // Fixed: Changed from String to native java.util.UUID to match MongoDB codec expectations
+                    UUID id = UUID.randomUUID();
+
                     return HashToken.create(
-                            id,
+                            id.toString(),
                             command.tenantId(),
                             command.sourceService(),
                             command.payload(),
@@ -127,10 +130,9 @@ public class GenerateHashInteractor implements GenerateHashUseCase {
                 executor,
                 Map.of(
                         "algorithm", token.algorithm().name(),
-                        "tokenId", token.id(),
+                        "tokenId", token.id().toString(),
                         "isSerialKey", String.valueOf(!token.generatedHash().equals(token.payload()))
                 )
         ));
     }
 }
-

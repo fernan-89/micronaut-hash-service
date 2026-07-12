@@ -31,6 +31,9 @@ public interface HashTokenRepositoryPort {
     @Nonnull
     Mono<HashToken> save(@Nonnull HashToken hashToken);
 
+    @Nonnull
+    Mono<HashToken> update(@Nonnull HashToken hashToken);
+
     /**
      * Retrieves a specific hash registry by its unique system identifier.
      *

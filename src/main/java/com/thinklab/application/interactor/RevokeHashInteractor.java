@@ -52,7 +52,7 @@ public class RevokeHashInteractor implements RevokeHashUseCase {
                     return Mono.error(new HashNotFoundException(command.hashId()));
                 }))
                 .map(existingToken -> existingToken.revoke(command.executor()))
-                .flatMap(hashTokenRepository::save)
+                .flatMap(hashTokenRepository::update) // CORRIGIDO PARA UPDATE!
                 .flatMap(revokedToken -> createAuditLog(revokedToken, command.executor(), command.reason())
                         .thenReturn(revokedToken))
                 .doOnSuccess(token -> log.info("HashToken successfully revoked and audited: [{}]", token.id()))

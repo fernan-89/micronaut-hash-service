@@ -12,6 +12,7 @@ import io.micronaut.data.annotation.MappedEntity;
 import io.micronaut.serde.annotation.Serdeable;
 
 import java.time.Instant;
+import java.util.UUID;
 
 /**
  * Infrastructure Entity: Persistence model for the HashToken aggregate.
@@ -22,7 +23,7 @@ import java.time.Instant;
 @MappedEntity("hash_token")
 public record HashTokenEntity(
         @Id
-        String id,
+        UUID id,
 
         @NonNull
         String tenantId,
@@ -63,7 +64,7 @@ public record HashTokenEntity(
      */
     public static HashTokenEntity fromDomain(@NonNull HashToken domain) {
         return new HashTokenEntity(
-                domain.id(),
+                UUID.fromString(domain.id()),
                 domain.tenantId(),
                 domain.sourceService(),
                 domain.payload(),
@@ -83,7 +84,7 @@ public record HashTokenEntity(
      */
     public HashToken toDomain() {
         return new HashToken(
-                id,
+                id.toString(),
                 tenantId,
                 sourceService,
                 payload,

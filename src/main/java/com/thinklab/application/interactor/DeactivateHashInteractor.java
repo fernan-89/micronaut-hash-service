@@ -51,7 +51,7 @@ public class DeactivateHashInteractor implements DeactivateHashUseCase {
                     return Mono.error(new HashNotFoundException(command.hashId()));
                 }))
                 .map(existingToken -> existingToken.deactivate(command.executor()))
-                .flatMap(hashTokenRepository::save)
+                .flatMap(hashTokenRepository::update)
                 .flatMap(updatedToken -> createAuditLog(updatedToken, command.executor(), command.reason())
                         .thenReturn(updatedToken))
                 .doOnSuccess(token -> log.info("HashToken successfully deactivated and audited: [{}]", token.id()))

@@ -5,9 +5,11 @@ import com.thinklab.infrastructure.adapter.out.mongo.entity.HashTokenEntity;
 import jakarta.annotation.Nonnull;
 import io.micronaut.data.model.Pageable;
 import io.micronaut.data.mongodb.annotation.MongoRepository;
-import io.micronaut.data.repository.reactive.ReactorCrudRepository;
+import io.micronaut.data.repository.reactive.ReactorCrudRepository; // <-- CORREÇÃO: Voltamos para a interface nativa do Micronaut
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.util.UUID; // <-- CONTINUA AQUI: O nosso ID de Alta Performance!
 
 /**
  * Micronaut Data Repository: Reactive persistence interface for {@link HashTokenEntity}.
@@ -17,15 +19,18 @@ import reactor.core.publisher.Mono;
  *
  * <p><b>Persistence Strategy:</b></p>
  * <ul>
- *     <li><b>Reactive Mongo:</b> Extends {@link ReactiveMongoRepository} for specialized
- *         MongoDB reactive support.</li>
- *     <li><b>Zero Reflection:</b> Implementations are generated at compile-time to
- *         optimize startup and footprint.</li>
- *     <li><b>Data Integrity:</b> Supports optimistic locking via the entity's version field.</li>
+ * <li><b>Reactive Mongo:</b> Uses {@link ReactorCrudRepository} mapped with @MongoRepository
+ * for specialized MongoDB reactive support.</li>
+ * <li><b>Zero Reflection:</b> Implementations are generated at compile-time to
+ * optimize startup and footprint.</li>
+ * <li><b>Data Integrity:</b> Supports optimistic locking via the entity's version field.</li>
  * </ul>
+ * 🚀 STAFF ENGINEER NOTE (Nível NASA):
+ * O tipo do ID foi alterado de String para UUID para refletir o armazenamento
+ * nativo otimizado (BSON Binary Subtype 4) implementado na HashTokenEntity.
  */
 @MongoRepository
-public interface HashTokenMongoRepository extends ReactorCrudRepository<HashTokenEntity, String> {
+public interface HashTokenMongoRepository extends ReactorCrudRepository<HashTokenEntity, UUID> { // <-- MUDANÇA AQUI: Mantemos o Reactor e mudamos a String para UUID
 
     /**
      * Checks if an active hash already exists for the given tenant and raw payload.

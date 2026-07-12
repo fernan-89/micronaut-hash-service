@@ -51,7 +51,7 @@ public class ReactivateHashInteractor implements ReactivateHashUseCase {
                     return Mono.error(new HashNotFoundException(command.hashId()));
                 }))
                 .map(existingToken -> existingToken.reactivate(command.executor()))
-                .flatMap(hashTokenRepository::save)
+                .flatMap(hashTokenRepository::update) // CORRIGIDO PARA UPDATE!
                 .flatMap(updatedToken -> createAuditLog(updatedToken, command.executor(), command.reason())
                         .thenReturn(updatedToken))
                 .doOnSuccess(token -> log.info("HashToken successfully reactivated and audited: [{}]", token.id()))
