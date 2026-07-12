@@ -67,6 +67,7 @@ public class RevokeHashInteractor implements RevokeHashUseCase {
     private Mono<HashAudit> createAuditLog(HashToken token, String executor, String reason) {
         return hashAuditRepository.save(HashAudit.create(
                 token.tenantId(),
+                token.id(), // 🚀 STAFF ENGINEER NOTE: Vincula este rastro forense ao ID único da entidade revogada permanentemente
                 "HASH_REVOCATION",
                 "SUCCESS",
                 executor,

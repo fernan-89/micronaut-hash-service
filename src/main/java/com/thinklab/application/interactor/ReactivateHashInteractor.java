@@ -66,6 +66,7 @@ public class ReactivateHashInteractor implements ReactivateHashUseCase {
     private Mono<HashAudit> createAuditLog(HashToken token, String executor, String reason) {
         return hashAuditRepository.save(HashAudit.create(
                 token.tenantId(),
+                token.id(), // 🚀 STAFF ENGINEER NOTE: Amarra deterministicamente o log forense ao ID único da entidade reativada
                 "HASH_REACTIVATION",
                 "SUCCESS",
                 executor,

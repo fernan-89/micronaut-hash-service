@@ -1,8 +1,8 @@
 {
   "info": {
-    "_postman_id": "2b46a71b-2cda-4564-b7a3-5bcbdd141e02",
-    "name": "Hash Service - Lifecycle Suite (Nível NASA)",
-    "description": "Suite E2E de testes para o HashController. Valida o fluxo completo: Geração -> Recuperação -> Listagem -> Ciclo de Vida (Deactivate/Reactivate) -> Revogação.",
+    "_postman_id": "9bf74ffe-f872-475b-a442-74eb25044e85",
+    "name": "Hash Service - Lifecycle Suite",
+    "description": "Suite E2E de testes para o HashController. Valida o fluxo completo: Geração -> Recuperação -> Listagem -> Ciclo de Vida (Deactivate/Reactivate) -> Trilha de Auditoria -> Revogação.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "39879181"
   },
@@ -19,9 +19,7 @@
               "pm.environment.set(\"hashId\", jsonData.id);",
               "pm.test(\"Hash ID was generated\", () => pm.expect(jsonData.id).to.not.be.undefined);"
             ],
-            "type": "text/javascript",
-            "packages": {},
-            "requests": {}
+            "type": "text/javascript"
           }
         }
       ],
@@ -59,9 +57,7 @@
               "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
               "pm.test(\"ID matches environment\", () => pm.expect(pm.response.json().id).to.eql(pm.environment.get(\"hashId\")));"
             ],
-            "type": "text/javascript",
-            "packages": {},
-            "requests": {}
+            "type": "text/javascript"
           }
         }
       ],
@@ -91,9 +87,7 @@
               "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
               "pm.test(\"Returns list\", () => pm.expect(pm.response.json()).to.be.an('object'));"
             ],
-            "type": "text/javascript",
-            "packages": {},
-            "requests": {}
+            "type": "text/javascript"
           }
         }
       ],
@@ -136,9 +130,7 @@
             "exec": [
               "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));"
             ],
-            "type": "text/javascript",
-            "packages": {},
-            "requests": {}
+            "type": "text/javascript"
           }
         }
       ],
@@ -177,9 +169,7 @@
             "exec": [
               "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));"
             ],
-            "type": "text/javascript",
-            "packages": {},
-            "requests": {}
+            "type": "text/javascript"
           }
         }
       ],
@@ -210,7 +200,40 @@
       "response": []
     },
     {
-      "name": "06. Revoke Hash",
+      "name": "06. Get Forensic Audit Trail",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
+              "const logs = pm.response.json();",
+              "pm.test(\"Is a non-empty list\", () => pm.expect(logs).to.be.an('array').and.not.empty);",
+              "pm.test(\"Contains entityId mapping\", () => pm.expect(logs[0].entityId).to.eql(pm.environment.get(\"hashId\")));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/hashes/{{hashId}}/audit",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "hashes",
+            "{{hashId}}",
+            "audit"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "07. Revoke Hash",
       "event": [
         {
           "listen": "test",
@@ -219,9 +242,7 @@
               "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
               "pm.environment.unset(\"hashId\");"
             ],
-            "type": "text/javascript",
-            "packages": {},
-            "requests": {}
+            "type": "text/javascript"
           }
         }
       ],

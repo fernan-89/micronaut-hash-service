@@ -125,12 +125,13 @@ public class GenerateHashInteractor implements GenerateHashUseCase {
     private Mono<HashAudit> createAuditLog(HashToken token, String executor) {
         return hashAuditRepository.save(HashAudit.create(
                 token.tenantId(),
+                token.id(), // 🚀 STAFF ENGINEER NOTE: Vincula este rastro forense ao ID único da entidade gerada
                 "HASH_GENERATION",
                 "SUCCESS",
                 executor,
                 Map.of(
                         "algorithm", token.algorithm().name(),
-                        "tokenId", token.id().toString(),
+                        "tokenId", token.id(),
                         "isSerialKey", String.valueOf(!token.generatedHash().equals(token.payload()))
                 )
         ));

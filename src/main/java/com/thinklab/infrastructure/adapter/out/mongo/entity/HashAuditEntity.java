@@ -13,6 +13,7 @@ import io.micronaut.serde.annotation.Serdeable;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Infrastructure Entity: Persistence model for the forensic audit trail.
@@ -22,8 +23,9 @@ import java.util.Map;
  * <p><b>Persistence Strategy:</b></p>
  * <ul>
  *     <li><b>Immutable:</b> Implemented as a Java Record for thread-safety.</li>
- *     <li><b>BSON Decoupling:</b> Uses String identifiers to shield higher layers from driver types.</li>
- *     <li><b>Forensic Optimized:</b> Indexed for rapid retrieval by tenant, transaction, or executor.</li>
+ *     <li><b>BSON Decoupling:</b> Uses String identifiers for the primary key to shield higher layers from driver types,
+ *         while preserving high-performance binary subtypes for internal entity correlations.</li>
+ *     <li><b>Forensic Optimized:</b> Indexed for rapid retrieval by tenant, transaction, entity, or executor.</li>
  * </ul>
  */
 @Serdeable
@@ -32,6 +34,7 @@ import java.util.Map;
 @Indexes({
         @Index(columns = {"txId"}),
         @Index(columns = {"tenantId"}),
+        @Index(columns = {"entityId"}), // <-- Novo índice para buscas performáticas por Entidade
         @Index(columns = {"executorId"}),
         @Index(columns = {"timestamp"})
 })
@@ -45,6 +48,9 @@ public record HashAuditEntity(
 
         @NonNull
         String tenantId,
+
+        @NonNull
+        UUID entityId, // 🚀 STAFF ENGINEER NOTE: Armazenamento nativo otimizado (BSON Binary Subtype 4)
 
         @NonNull
         String operation,
@@ -73,6 +79,7 @@ public record HashAuditEntity(
                 domain.id(),
                 domain.txId(),
                 domain.tenantId(),
+                UUID.fromString(domain.entityId()), // Converte a String de domínio para o UUID persistido
                 domain.operation(),
                 domain.status(),
                 domain.executorId(),
@@ -91,6 +98,7 @@ public record HashAuditEntity(
                 id,
                 txId,
                 tenantId,
+                entityId.toString(), // Converte o UUID interno de volta para a String de domínio
                 operation,
                 status,
                 executorId,

@@ -15,4 +15,7 @@ public interface HashAuditRepositoryPort {
 
     @Nonnull
     Flux<HashAudit> findByTenantId(@Nonnull String tenantId);
+
+    @Nonnull
+    Flux<HashAudit> findByEntityId(@Nonnull String entityId);
 }

@@ -6,6 +6,8 @@ import io.micronaut.data.mongodb.annotation.MongoRepository;
 import io.micronaut.data.repository.reactive.ReactorCrudRepository;
 import reactor.core.publisher.Flux;
 
+import java.util.UUID;
+
 /**
  * Micronaut Data Repository: Reactive persistence interface for {@link HashAuditEntity}.
  * This repository handles the append-only storage of forensic audit records. It utilizes
@@ -14,7 +16,7 @@ import reactor.core.publisher.Flux;
  *
  * <p><b>Persistence Strategy (NASA Standards):</b></p>
  * <ul>
- *     <li><b>Reactive Protocol:</b> Inherits from {@link ReactiveMongoRepository} for
+ *     <li><b>Reactive Protocol:</b> Inherits from {@link ReactorCrudRepository} for
  *         native specialized MongoDB reactive support, ensuring proper bean injection.</li>
  *     <li><b>Forensic Integrity:</b> Designed for immutable trails; while standard CRUD
  *         is inherited, business rules prohibit updates or deletions of audit logs.</li>
@@ -44,4 +46,14 @@ public interface HashAuditMongoRepository extends ReactorCrudRepository<HashAudi
      */
     @NonNull
     Flux<HashAuditEntity> findByTenantIdOrderByTimestampDesc(@NonNull String tenantId);
+
+    /**
+     * Retrieves all forensic audit logs mapped to a specific business entity.
+     * Leverages the native UUID optimization to trace lifecycle modifications of target domain models.
+     *
+     * @param entityId The targeted business entity unique identifier (UUID).
+     * @return A {@link Flux} emitting matching audit entities for the requested business entity.
+     */
+    @NonNull
+    Flux<HashAuditEntity> findByEntityId(@NonNull UUID entityId);
 }

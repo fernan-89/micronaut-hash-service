@@ -12,6 +12,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Persistence Adapter: Implementation of the {@link HashAuditRepositoryPort} for MongoDB.
@@ -84,6 +85,24 @@ public class HashAuditRepositoryAdapter implements HashAuditRepositoryPort {
         Objects.requireNonNull(tenantId, "Tenant identifier is mandatory for audit listing");
 
         return repository.findByTenantIdOrderByTimestampDesc(tenantId)
+                .map(HashAuditEntity::toDomain);
+    }
+
+    /**
+     * Retrieves all audit logs matching a specific entity identifier.
+     *
+     * @param entityId The targeted business entity identifier.
+     * @return A {@link Flux} of matching domain audit records.
+     */
+    @Override
+    @Nonnull
+    public Flux<HashAudit> findByEntityId(@Nonnull String entityId) {
+        Objects.requireNonNull(entityId, "Entity identifier is mandatory for audit listing");
+
+        log.trace("Persistence Adapter: Fetching audit trail for Entity [{}]", entityId);
+
+        // 🚀 STAFF ENGINEER NOTE: Realiza o parse seguro de String para UUID na camada de acl/infraestrutura
+        return repository.findByEntityId(UUID.fromString(entityId))
                 .map(HashAuditEntity::toDomain);
     }
 }

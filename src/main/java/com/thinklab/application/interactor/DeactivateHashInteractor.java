@@ -66,6 +66,7 @@ public class DeactivateHashInteractor implements DeactivateHashUseCase {
     private Mono<HashAudit> createAuditLog(HashToken token, String executor, String reason) {
         return hashAuditRepository.save(HashAudit.create(
                 token.tenantId(),
+                token.id(), // 🚀 STAFF ENGINEER NOTE: Vincula este rastro forense ao ID único da entidade auditada
                 "HASH_DEACTIVATION",
                 "SUCCESS",
                 executor,

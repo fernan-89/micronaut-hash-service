@@ -1,7 +1,6 @@
 package com.thinklab.infrastructure.adapter.in.web.dto.response;
 
 import com.thinklab.domain.model.HashAudit;
-import io.micronaut.core.annotation.Introspected;
 import io.micronaut.core.annotation.NonNull;
 import io.micronaut.serde.annotation.Serdeable;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -32,7 +31,6 @@ import java.util.Map;
  * @param metadata  Contextual key-value pairs containing operation-specific details.
  */
 @Serdeable
-@Introspected
 @Schema(
         name = "HashAuditResponse",
         description = "Standardized forensic metadata representing a specific lifecycle event of a hash token."
@@ -75,8 +73,8 @@ public record HashAuditResponse(
                 domain.id(),
                 domain.txId(),
                 domain.tenantId(),
-                domain.operation(),
-                domain.status(),
+                domain.operation(), // Passado diretamente, pois já é String
+                domain.status(),    // Passado diretamente, pois já é String
                 domain.executorId(),
                 domain.timestamp(),
                 domain.metadata() != null ? Map.copyOf(domain.metadata()) : Map.of()

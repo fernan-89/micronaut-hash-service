@@ -3,14 +3,10 @@ package com.thinklab.infrastructure.adapter.in.web.controller;
 import com.thinklab.application.command.GetHashQuery;
 import com.thinklab.application.command.ListHashesQuery;
 import com.thinklab.application.port.in.*;
+import com.thinklab.domain.model.HashAudit;
 import com.thinklab.domain.valueobject.HashStatus;
-import com.thinklab.infrastructure.adapter.in.web.dto.request.DeactivateHashRequest;
-import com.thinklab.infrastructure.adapter.in.web.dto.request.GenerateHashRequest;
-import com.thinklab.infrastructure.adapter.in.web.dto.request.ReactivateHashRequest;
-import com.thinklab.infrastructure.adapter.in.web.dto.request.RevokeHashRequest;
-import com.thinklab.infrastructure.adapter.in.web.dto.response.DeactivateHashResponse;
-import com.thinklab.infrastructure.adapter.in.web.dto.response.HashResponse;
-import com.thinklab.infrastructure.adapter.in.web.dto.response.PagedHashResponse;
+import com.thinklab.infrastructure.adapter.in.web.dto.request.*;
+import com.thinklab.infrastructure.adapter.in.web.dto.response.*;
 import io.micronaut.core.annotation.Nullable;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.MutableHttpResponse;
@@ -24,17 +20,21 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
+
 /**
  * REST Controller: The primary inbound adapter for the Hash Service.
- * This class acts as a thin mediation layer between the HTTP transport protocol
- * and the Core Application UseCases. It focuses on protocol translation,
- * input validation, and secure data projection.
+ * <p>Acts as a thin mediation layer between the HTTP transport protocol and the
+ * Core Application UseCases. It focuses on protocol translation, strict input
+ * validation, and secure data projection to maintain domain isolation.</p>
  *
  * <p><b>Architectural Principles:</b></p>
  * <ul>
- *     <li><b>Non-blocking:</b> Leverages Project Reactor for asynchronous processing.</li>
- *     <li><b>Decoupled:</b> Depends only on Input Ports (Interfaces).</li>
- *     <li><b>Defensive:</b> Enforces strict DTO validation at the boundary.</li>
+ * <li><b>Non-blocking:</b> Leverages Project Reactor for asynchronous processing.</li>
+ * <li><b>Decoupled:</b> Depends only on Input Ports (Interfaces), strictly avoiding
+ * exposure of internal persistence entities.</li>
+ * <li><b>Defensive:</b> Enforces strict DTO validation (JSR 303/380) at the API boundary.</li>
+ * <li><b>Auditability:</b> Every state-changing request logs intent and outcome.</li>
  * </ul>
  */
 @Slf4j
@@ -49,14 +49,19 @@ public class HashController {
     private final DeactivateHashUseCase deactivateHashUseCase;
     private final ReactivateHashUseCase reactivateHashUseCase;
     private final RevokeHashUseCase revokeHashUseCase;
+    private final GetAuditLogsUseCase getAuditLogsUseCase; // 🚀 Injeção do UseCase de trilha forense
 
     /**
-     * Generates a new cryptographic hash or serial key.
+     * Generates a new cryptographic hash or serial key based on tenant specifications.
+     *
+     * @param request The {@link GenerateHashRequest} payload containing tenant metadata and hashing algorithm.
+     * @return A {@link Mono} emitting a {@link MutableHttpResponse} with the generated {@link HashResponse} and 201 Created status.
+     * @throws io.micronaut.http.HttpStatusException if input validation fails.
      */
     @Post
     @Operation(summary = "Generate a new hash", description = "Calculates a cryptographic hash and persists it.")
     @ApiResponse(responseCode = "201", description = "Hash generated and audited successfully")
-    public Mono<MutableHttpResponse<HashResponse>> generate(@Body @Valid GenerateHashRequest request) { // <-- Alterado aqui
+    public Mono<MutableHttpResponse<HashResponse>> generate(@Body @Valid GenerateHashRequest request) {
         log.info("REST Request: Generation intent for tenant [{}] using algorithm [{}]",
                 request.tenantId(), request.algorithm());
 
@@ -67,7 +72,11 @@ public class HashController {
     }
 
     /**
-     * Retrieves a single hash registry by its internal system identifier.
+     * Retrieves a single hash registry record by its internal system identifier (UUID).
+     *
+     * @param id The unique internal identifier of the hash registry.
+     * @return A {@link Mono} emitting a {@link HttpResponse} with the {@link HashResponse} record.
+     * @apiNote Returns 404 if no record exists for the provided identifier.
      */
     @Get("/{id}")
     @Operation(summary = "Get hash by ID", description = "Retrieves the sanitized metadata of a specific hash.")
@@ -83,6 +92,12 @@ public class HashController {
 
     /**
      * Lists hashes for a specific tenant with optional status filtering and pagination.
+     *
+     * @param tenantId The unique identifier of the tenant (provided via header).
+     * @param status   Optional filter to restrict results by {@link HashStatus}.
+     * @param page     Page index for pagination (default: 0).
+     * @param size     Page size (default: 20).
+     * @return A {@link Mono} emitting a {@link HttpResponse} containing a {@link PagedHashResponse}.
      */
     @Get
     @Operation(summary = "List tenant hashes", description = "Returns a paginated stream of hashes belonging to a tenant.")
@@ -104,7 +119,11 @@ public class HashController {
     }
 
     /**
-     * Suspends a hash operational status (transitions to INACTIVE).
+     * Suspends a hash operational status by transitioning it to INACTIVE.
+     *
+     * @param id      The system identifier of the hash.
+     * @param request Authorization and reason context for the deactivation action.
+     * @return A {@link Mono} emitting a {@link HttpResponse} with confirmation of state transition.
      */
     @Patch("/{id}/deactivate")
     @Operation(summary = "Deactivate a hash", description = "Transitions an active hash to INACTIVE status.")
@@ -116,15 +135,20 @@ public class HashController {
         log.warn("REST Request: Deactivation intent for ID [{}] authorized by [{}]", id, request.executor());
 
         return deactivateHashUseCase.execute(request.toCommand(id))
-                .map(token -> DeactivateHashResponse.fromDomain(token, request.executor(), request.reason())) // <-- Assim!
+                .map(token -> DeactivateHashResponse.fromDomain(token, request.executor(), request.reason()))
                 .map(HttpResponse::ok);
     }
 
     /**
      * Restores an inactive hash to its operational state (transitions to ACTIVE).
+     *
+     * @param id      The system identifier of the hash.
+     * @param request Authorization context for the reactivation action.
+     * @return A {@link Mono} emitting a {@link HttpResponse} with the updated hash record.
      */
     @Patch("/{id}/reactivate")
     @Operation(summary = "Reactivate a hash", description = "Restores an INACTIVE hash to ACTIVE status.")
+    @ApiResponse(responseCode = "200", description = "Hash reactivated successfully")
     public Mono<HttpResponse<HashResponse>> reactivate(
             @PathVariable String id,
             @Body @Valid ReactivateHashRequest request) {
@@ -137,7 +161,12 @@ public class HashController {
     }
 
     /**
-     * Permanently and irreversibly revokes a hash registry (terminal state).
+     * Permanently and irreversibly revokes a hash registry, transitioning it to a terminal REVOKED state.
+     * <p><b>Note:</b> This is a destructive operation and must be performed with elevated privileges.</p>
+     *
+     * @param id      The system identifier of the hash.
+     * @param request Authorization context indicating the revoker's credentials.
+     * @return A {@link Mono} emitting a {@link HttpResponse} confirming the terminal revocation.
      */
     @Delete("/{id}")
     @Operation(summary = "Revoke a hash", description = "Irreversibly transitions a hash to REVOKED status (Zero Trust).")
@@ -151,5 +180,24 @@ public class HashController {
         return revokeHashUseCase.execute(request.toCommand(id))
                 .map(HashResponse::fromDomain)
                 .map(HttpResponse::ok);
+    }
+
+    /**
+     * Retrieves the entire immutable forensic audit trail mapped to a specific cryptographic hash.
+     *
+     * @param id The targeted business entity identifier (Hash ID).
+     * @return A {@link Mono} emitting a {@link HttpResponse} containing the list of audit logs.
+     */
+    @Get("/{id}/audit")
+    @Operation(summary = "Get audit trail", description = "Retrieves the complete immutable forensic history of state mutations for a specific hash.")
+    @ApiResponse(responseCode = "200", description = "Audit logs retrieved successfully")
+    @ApiResponse(responseCode = "400", description = "Invalid or blank entity identifier")
+    public Mono<HttpResponse<List<HashAuditResponse>>> getAuditTrail(@PathVariable String id) {
+        log.debug("REST Request: Fetching forensic audit logs for Entity ID [{}]", id);
+
+        return getAuditLogsUseCase.execute(id)
+                .map(HashAuditResponse::fromDomain) // 🚀 Transforma cada HashAudit (Domínio) em HashAuditResponse (DTO)
+                .collectList()                      // Agrupa o fluxo reativo em uma lista [HashAuditResponse]
+                .map(HttpResponse::ok);             // Retorna HTTP 200 com a lista serializável
     }
 }

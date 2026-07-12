@@ -24,6 +24,7 @@ public record HashAudit(
         @Nonnull String id,
         @Nonnull String txId,
         @Nonnull String tenantId,
+        @Nonnull String entityId, // 🚀 STAFF ENGINEER NOTE: Vincula diretamente o rastro forense ao ID do recurso de negócio auditado
         @Nonnull String operation,
         @Nonnull String status,
         @Nonnull String executorId,
@@ -39,6 +40,7 @@ public record HashAudit(
         Objects.requireNonNull(id, "Audit ID cannot be null.");
         Objects.requireNonNull(txId, "Transaction ID cannot be null.");
         Objects.requireNonNull(tenantId, "Tenant ID cannot be null.");
+        Objects.requireNonNull(entityId, "Entity ID cannot be null.");
         Objects.requireNonNull(operation, "Operation type is mandatory.");
         Objects.requireNonNull(status, "Operation status is mandatory.");
         Objects.requireNonNull(executorId, "Executor identification is required.");
@@ -52,6 +54,7 @@ public record HashAudit(
      * Static factory method to create a new audit record with default initial values.
      *
      * @param tenantId   The owner of the audited resource.
+     * @param entityId   The targeted business entity identifier being audited.
      * @param operation  The business action performed (e.g., CREATION, DEACTIVATION).
      * @param status     The outcome of the operation (SUCCESS, FAILURE).
      * @param executorId The system or user ID that authorized the action.
@@ -61,6 +64,7 @@ public record HashAudit(
     @Nonnull
     public static HashAudit create(
             @Nonnull String tenantId,
+            @Nonnull String entityId,
             @Nonnull String operation,
             @Nonnull String status,
             @Nonnull String executorId,
@@ -70,6 +74,7 @@ public record HashAudit(
                 UUID.randomUUID().toString(),
                 UUID.randomUUID().toString(),
                 tenantId,
+                entityId,
                 operation,
                 status,
                 executorId,
