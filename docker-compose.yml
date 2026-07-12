@@ -1,0 +1,31 @@
+# ==============================================================================
+# Thinklab Hash Service - Infrastructure Orchestration
+# ------------------------------------------------------------------------------
+# Defines the service topology for the Hash Service and its persistence layer.
+# This configuration orchestrates a containerized environment suitable for
+# development and integration testing.
+# ==============================================================================
+services:
+  # The Hash Service application node
+  hash-service:
+    # Build the service using the current directory's Dockerfile
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      # Connection string referencing the internal Docker service name 'mongodb'.
+      # Uses 'root' credentials as defined in the mongodb service block.
+      - MONGO_DB_URI=mongodb://root:password@mongodb:27017/hashdb?authSource=admin
+    # Ensures the application starts only after the database is ready
+    depends_on:
+      - mongodb
+
+  # MongoDB database instance
+  mongodb:
+    image: mongo:6.0
+    ports:
+      - "27017:27017"
+    environment:
+      # Security credentials for the MongoDB root user
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=password

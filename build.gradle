@@ -11,49 +11,48 @@ repositories {
     mavenCentral()
 }
 
-// 1. Sintaxe padronizada para evitar quebra no build
-configurations.all {
-    resolutionStrategy.eachDependency { details ->
-        if (details.requested.group == "org.projectlombok" && details.requested.name == "lombok") {
-            details.useVersion("1.18.36")
-        }
-    }
-}
-
 dependencies {
-    // Lombok (Code generation, getters, setters, Slf4j)
+    // Lombok
     annotationProcessor("org.projectlombok:lombok:1.18.36")
     compileOnly("org.projectlombok:lombok:1.18.36")
 
-    // OpenAPI / Swagger (Documentation)
+    // OpenAPI
     annotationProcessor("io.micronaut.openapi:micronaut-openapi")
     compileOnly("io.swagger.core.v3:swagger-annotations")
 
-    // Jakarta Validation (Business rules validation and sanitization)
+    // Validation
     annotationProcessor("io.micronaut.validation:micronaut-validation-processor")
     implementation("io.micronaut.validation:micronaut-validation")
-    implementation("jakarta.validation:jakarta.validation-api")
 
-    // Micronaut Core & Serde (JSON Serialization)
+    // Micronaut Core & Serde
     annotationProcessor("io.micronaut:micronaut-http-validation")
     annotationProcessor("io.micronaut.serde:micronaut-serde-processor")
     implementation("io.micronaut.serde:micronaut-serde-jackson")
 
-    // Database & Reactivity (MongoDB and Project Reactor)
+    // Database & Reactivity
     annotationProcessor("io.micronaut.data:micronaut-data-document-processor")
+
+    // 1. Micronaut Data (Repository Support)
     implementation("io.micronaut.data:micronaut-data-mongodb")
+
+    // 2. Micronaut Mongo Auto-configuration
+    implementation("io.micronaut.mongodb:micronaut-mongo-reactive")
+
+    // 3. The actual MongoDB Reactive Driver (Provides ReadConcern, MongoClient, etc.)
+    implementation("org.mongodb:mongodb-driver-reactivestreams")
+
     implementation("io.projectreactor:reactor-core")
 
     // Logging and Client
     runtimeOnly("ch.qos.logback:logback-classic")
-    compileOnly("io.micronaut:micronaut-http-client")
-    testImplementation("io.micronaut:micronaut-http-client")
+    implementation("io.micronaut:micronaut-http-client")
+
+    // Management
+    implementation("io.micronaut:micronaut-management")
 
     // Testing
+    testImplementation("io.micronaut:micronaut-http-client")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-
-    // Management & Observability (Liveness/Readiness health endpoints)
-    implementation("io.micronaut:micronaut-management")
 }
 
 application {
@@ -66,7 +65,6 @@ java {
     }
 }
 
-// 2. Bloco GraalVM agrupado corretamente
 graalvmNative {
     toolchainDetection = false
     binaries {
@@ -93,13 +91,4 @@ micronaut {
         optimizeNetty = true
         replaceLogbackXml = true
     }
-}
-
-tasks.named("dockerfile") {
-    baseImage = "eclipse-temurin:21-jre"
-}
-
-// 3. Substituído AbstractTestTask por Test para evitar erro de importação
-tasks.withType(Test).configureEach {
-    failOnNoDiscoveredTests = false
 }

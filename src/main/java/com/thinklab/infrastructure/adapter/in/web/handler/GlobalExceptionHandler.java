@@ -22,9 +22,9 @@ import java.util.Map;
  *
  * <p><b>Design Principles:</b></p>
  * <ul>
- *     <li><b>Non-blocking:</b> Fully integrated into Micronaut's Netty pipeline.</li>
- *     <li><b>Sanitization:</b> Prevents internal stack traces from leaking to the client.</li>
- *     <li><b>Categorization:</b> Separates Business Errors (4xx) from Technical Failures (500).</li>
+ * <li><b>Observability:</b> Logs full stack traces for technical failures (500).</li>
+ * <li><b>Non-blocking:</b> Fully integrated into Micronaut's Netty pipeline.</li>
+ * <li><b>Categorization:</b> Separates Business Errors (4xx) from Technical Failures (500).</li>
  * </ul>
  */
 @Slf4j
@@ -35,7 +35,8 @@ public class GlobalExceptionHandler implements ExceptionHandler<Throwable, HttpR
 
     @Override
     public HttpResponse<Map<String, Object>> handle(HttpRequest request, Throwable exception) {
-        log.error("Global Exception Captured: {} - Path: [{}]", exception.getMessage(), request.getPath());
+        // Log detalhado com stacktrace completa para depuração técnica (Nível NASA)
+        log.error("Global Exception Captured: Path: [{}] | Error: {}", request.getPath(), exception.getMessage(), exception);
 
         // 1. Handle Domain Business Exceptions (e.g., 404, 409, 422)
         if (exception instanceof BusinessException businessEx) {
@@ -67,7 +68,10 @@ public class GlobalExceptionHandler implements ExceptionHandler<Throwable, HttpR
     }
 
     private HttpResponse<Map<String, Object>> handleGenericException(Throwable ex) {
-        return HttpResponse.serverError().body(createProblem("INTERNAL_SERVER_ERROR", "An unexpected technical failure occurred.", 500));
+        Map<String, Object> body = createProblem("INTERNAL_SERVER_ERROR", "An unexpected technical failure occurred.", 500);
+        // Expondo detalhes da exceção apenas em falhas 500 para facilitar o debug imediato
+        body.put("details", ex.getClass().getSimpleName() + ": " + ex.getMessage());
+        return HttpResponse.serverError().body(body);
     }
 
     private Map<String, Object> createProblem(String code, String message, int status) {
