@@ -1,0 +1,105 @@
+plugins {
+    id("io.micronaut.application") version "4.4.2"
+    id("io.micronaut.aot") version "4.4.2"
+    id("com.gradleup.shadow") version "8.3.0"
+}
+
+version = "0.1"
+group = "com.thinklab"
+
+repositories {
+    mavenCentral()
+}
+
+// 1. Sintaxe padronizada para evitar quebra no build
+configurations.all {
+    resolutionStrategy.eachDependency { details ->
+        if (details.requested.group == "org.projectlombok" && details.requested.name == "lombok") {
+            details.useVersion("1.18.36")
+        }
+    }
+}
+
+dependencies {
+    // Lombok (Code generation, getters, setters, Slf4j)
+    annotationProcessor("org.projectlombok:lombok:1.18.36")
+    compileOnly("org.projectlombok:lombok:1.18.36")
+
+    // OpenAPI / Swagger (Documentation)
+    annotationProcessor("io.micronaut.openapi:micronaut-openapi")
+    compileOnly("io.swagger.core.v3:swagger-annotations")
+
+    // Jakarta Validation (Business rules validation and sanitization)
+    annotationProcessor("io.micronaut.validation:micronaut-validation-processor")
+    implementation("io.micronaut.validation:micronaut-validation")
+    implementation("jakarta.validation:jakarta.validation-api")
+
+    // Micronaut Core & Serde (JSON Serialization)
+    annotationProcessor("io.micronaut:micronaut-http-validation")
+    annotationProcessor("io.micronaut.serde:micronaut-serde-processor")
+    implementation("io.micronaut.serde:micronaut-serde-jackson")
+
+    // Database & Reactivity (MongoDB and Project Reactor)
+    annotationProcessor("io.micronaut.data:micronaut-data-document-processor")
+    implementation("io.micronaut.data:micronaut-data-mongodb")
+    implementation("io.projectreactor:reactor-core")
+
+    // Logging and Client
+    runtimeOnly("ch.qos.logback:logback-classic")
+    compileOnly("io.micronaut:micronaut-http-client")
+    testImplementation("io.micronaut:micronaut-http-client")
+
+    // Testing
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    // Management & Observability (Liveness/Readiness health endpoints)
+    implementation("io.micronaut:micronaut-management")
+}
+
+application {
+    mainClass = "com.thinklab.Application"
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+// 2. Bloco GraalVM agrupado corretamente
+graalvmNative {
+    toolchainDetection = false
+    binaries {
+        all {
+            buildArgs.add("-H:+SharedArenaSupport")
+        }
+    }
+}
+
+micronaut {
+    runtime("netty")
+    testRuntime("junit5")
+    processing {
+        incremental(true)
+        annotations("com.thinklab.*")
+    }
+    aot {
+        optimizeServiceLoading = false
+        convertYamlToJava = false
+        precomputeOperations = true
+        cacheEnvironment = true
+        optimizeClassLoading = true
+        deduceEnvironment = true
+        optimizeNetty = true
+        replaceLogbackXml = true
+    }
+}
+
+tasks.named("dockerfile") {
+    baseImage = "eclipse-temurin:21-jre"
+}
+
+// 3. Substituído AbstractTestTask por Test para evitar erro de importação
+tasks.withType(Test).configureEach {
+    failOnNoDiscoveredTests = false
+}
