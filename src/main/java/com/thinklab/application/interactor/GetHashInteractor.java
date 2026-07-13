@@ -1,6 +1,6 @@
 package com.thinklab.application.interactor;
 
-import com.thinklab.application.command.GetHashQuery;
+import com.thinklab.application.usecase.command.GetHashQuery;
 import com.thinklab.application.port.out.HashTokenRepositoryPort;
 import com.thinklab.domain.exception.HashNotFoundException;
 import com.thinklab.domain.model.HashToken;

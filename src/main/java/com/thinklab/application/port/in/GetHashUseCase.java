@@ -1,6 +1,6 @@
 package com.thinklab.application.port.in;
 
-import com.thinklab.application.command.GetHashQuery;
+import com.thinklab.application.usecase.command.GetHashQuery;
 import com.thinklab.domain.model.HashToken;
 import jakarta.annotation.Nonnull;
 import reactor.core.publisher.Mono;

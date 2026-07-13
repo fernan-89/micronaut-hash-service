@@ -1,6 +1,6 @@
 package com.thinklab.application.port.in;
 
-import com.thinklab.application.command.RevokeHashCommand;
+import com.thinklab.application.usecase.command.RevokeHashCommand;
 import com.thinklab.domain.model.HashToken;
 import jakarta.annotation.Nonnull;
 import reactor.core.publisher.Mono;

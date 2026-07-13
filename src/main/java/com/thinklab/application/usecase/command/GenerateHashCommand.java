@@ -1,4 +1,4 @@
-package com.thinklab.application.command;
+package com.thinklab.application.usecase.command;
 
 import com.thinklab.domain.valueobject.HashAlgorithm;
 import io.micronaut.core.annotation.Introspected;

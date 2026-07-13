@@ -1,6 +1,6 @@
 package com.thinklab.application.interactor;
 
-import com.thinklab.application.command.ListHashesQuery;
+import com.thinklab.application.usecase.command.ListHashesQuery;
 import com.thinklab.application.port.out.HashTokenRepositoryPort;
 import com.thinklab.domain.model.HashToken;
 import com.thinklab.application.port.in.ListHashesUseCase;

@@ -1,4 +1,4 @@
-package com.thinklab.application.command;
+package com.thinklab.application.usecase.command;
 
 import io.micronaut.core.annotation.Introspected;
 import jakarta.annotation.Nonnull;

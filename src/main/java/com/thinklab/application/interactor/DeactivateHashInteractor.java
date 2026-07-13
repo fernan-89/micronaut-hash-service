@@ -1,6 +1,6 @@
 package com.thinklab.application.interactor;
 
-import com.thinklab.application.command.DeactivateHashCommand;
+import com.thinklab.application.usecase.command.DeactivateHashCommand;
 import com.thinklab.application.port.out.HashAuditRepositoryPort;
 import com.thinklab.application.port.out.HashTokenRepositoryPort;
 import com.thinklab.domain.exception.HashNotFoundException;

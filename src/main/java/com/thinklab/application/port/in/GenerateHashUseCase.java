@@ -1,6 +1,6 @@
 package com.thinklab.application.port.in;
 
-import com.thinklab.application.command.GenerateHashCommand;
+import com.thinklab.application.usecase.command.GenerateHashCommand;
 import com.thinklab.domain.model.*;
 import jakarta.annotation.Nonnull;
 import reactor.core.publisher.Mono;

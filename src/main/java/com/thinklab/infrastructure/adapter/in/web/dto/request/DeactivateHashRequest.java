@@ -1,6 +1,6 @@
 package com.thinklab.infrastructure.adapter.in.web.dto.request;
 
-import com.thinklab.application.command.DeactivateHashCommand;
+import com.thinklab.application.usecase.command.DeactivateHashCommand;
 import io.micronaut.core.annotation.Introspected;
 import io.micronaut.serde.annotation.Serdeable;
 import io.swagger.v3.oas.annotations.media.Schema;

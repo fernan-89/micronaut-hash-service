@@ -1,9 +1,8 @@
 package com.thinklab.infrastructure.adapter.in.web.controller;
 
-import com.thinklab.application.command.GetHashQuery;
-import com.thinklab.application.command.ListHashesQuery;
+import com.thinklab.application.usecase.command.GetHashQuery;
+import com.thinklab.application.usecase.command.ListHashesQuery;
 import com.thinklab.application.port.in.*;
-import com.thinklab.domain.model.HashAudit;
 import com.thinklab.domain.valueobject.HashStatus;
 import com.thinklab.infrastructure.adapter.in.web.dto.request.*;
 import com.thinklab.infrastructure.adapter.in.web.dto.response.*;

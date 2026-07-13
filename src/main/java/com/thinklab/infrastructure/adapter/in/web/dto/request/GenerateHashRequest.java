@@ -1,6 +1,6 @@
 package com.thinklab.infrastructure.adapter.in.web.dto.request;
 
-import com.thinklab.application.command.GenerateHashCommand;
+import com.thinklab.application.usecase.command.GenerateHashCommand;
 import com.thinklab.domain.valueobject.HashAlgorithm;
 import io.micronaut.core.annotation.Introspected;
 import io.micronaut.serde.annotation.Serdeable;
