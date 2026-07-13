@@ -48,7 +48,7 @@ public class HashController {
     private final DeactivateHashUseCase deactivateHashUseCase;
     private final ReactivateHashUseCase reactivateHashUseCase;
     private final RevokeHashUseCase revokeHashUseCase;
-    private final GetAuditLogsUseCase getAuditLogsUseCase; // 🚀 Injeção do UseCase de trilha forense
+    private final GetAuditLogsUseCase getAuditLogsUseCase;
 
     /**
      * Generates a new cryptographic hash or serial key based on tenant specifications.
@@ -195,8 +195,8 @@ public class HashController {
         log.debug("REST Request: Fetching forensic audit logs for Entity ID [{}]", id);
 
         return getAuditLogsUseCase.execute(id)
-                .map(HashAuditResponse::fromDomain) // 🚀 Transforma cada HashAudit (Domínio) em HashAuditResponse (DTO)
-                .collectList()                      // Agrupa o fluxo reativo em uma lista [HashAuditResponse]
-                .map(HttpResponse::ok);             // Retorna HTTP 200 com a lista serializável
+                .map(HashAuditResponse::fromDomain)
+                .collectList()
+                .map(HttpResponse::ok);
     }
 }
