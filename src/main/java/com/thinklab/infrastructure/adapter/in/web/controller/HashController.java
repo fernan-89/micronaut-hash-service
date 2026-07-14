@@ -11,6 +11,9 @@ import io.micronaut.http.HttpResponse;
 import io.micronaut.http.MutableHttpResponse;
 import io.micronaut.http.annotation.*;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -41,11 +44,13 @@ import java.util.List;
  * <li><b>Lifecycle Tracing:</b> Streams emit logs idiomatically on Subscribe (Intent), Success (Outcome), and Error (Failure).</li>
  * <li><b>Strict Auditing:</b> Due to domain sensitivity, ALL operations (including reads) are logged at INFO level for access compliance. WARN is reserved for destructive actions (Zero Trust); ERROR for exceptions.</li>
  * </ul>
+ *
+ * @version 1.0.0
  */
 @Slf4j
 @Controller("/hashes")
 @RequiredArgsConstructor
-@Tag(name = "Hash Registry API", description = "Endpoints for managing cryptographic hash lifecycles and serial keys.")
+@Tag(name = "Hash Registry API", description = "Endpoints for managing cryptographic hash lifecycles, lifecycle audits, and serial keys.")
 public class HashController {
 
     private final GenerateHashUseCase generateHashUseCase;
@@ -58,16 +63,24 @@ public class HashController {
 
     /**
      * Generates a new cryptographic hash or serial key based on tenant specifications.
+     * <p>This operation initializes the lifecycle of a cryptographic record within the system.
+     * It performs cryptographic strength evaluation (where applicable) and persists the generated audit log.</p>
      *
      * @param request The {@link GenerateHashRequest} payload containing tenant metadata and hashing algorithm.
-     * @return A {@link Mono} emitting a {@link MutableHttpResponse} with the generated {@link HashResponse} and 201 Created status.
+     * @return A {@link Mono} emitting a {@link MutableHttpResponse} containing the generated {@link HashResponse} record with a 210 CREATED status.
+     * @throws io.micronaut.http.exceptions.HttpStatusException if payload fails strict JSR-380 validation at the framework adapter boundary.
      */
     @Post
-    @Operation(summary = "Generate a new hash", description = "Calculates a cryptographic hash, persists it securely, and logs the creation audit event.")
-    @ApiResponse(responseCode = "201", description = "Hash generated and audited successfully.")
-    @ApiResponse(responseCode = "400", description = "Invalid request payload (e.g., missing required fields, invalid algorithm).")
-    @ApiResponse(responseCode = "500", description = "Internal server error during hash generation.")
-    public Mono<MutableHttpResponse<HashResponse>> generate(@Body @Valid GenerateHashRequest request) {
+    @Operation(
+            summary = "Generate a new hash",
+            description = "Calculates a cryptographic hash based on the requested algorithm, persists it securely, and registers the initial creation audit event."
+    )
+    @ApiResponse(responseCode = "201", description = "Hash generated, persisted, and audited successfully.")
+    @ApiResponse(responseCode = "400", description = "Invalid request payload (e.g., missing required fields, empty tenant, or invalid algorithm).")
+    @ApiResponse(responseCode = "500", description = "Internal server error during hash calculation or secure persistence sequence.")
+    public Mono<MutableHttpResponse<HashResponse>> generate(
+            @Body @Valid @Parameter(description = "Payload containing metadata and the cryptographic specification", required = true) GenerateHashRequest request
+    ) {
         return generateHashUseCase.execute(request.toCommand())
                 .map(HashResponse::fromDomain)
                 .map(HttpResponse::created)
@@ -78,16 +91,23 @@ public class HashController {
 
     /**
      * Retrieves a single hash registry record by its internal system identifier.
+     * <p>Provides a sanitized project view of the target hash record, filtering out sensitive internal structures.</p>
      *
      * @param id The unique internal identifier (UUID) of the hash registry.
-     * @return A {@link Mono} emitting a {@link MutableHttpResponse} with the {@link HashResponse} record.
+     * @return A {@link Mono} emitting a {@link MutableHttpResponse} with the {@link HashResponse} metadata block.
+     * @throws io.micronaut.http.exceptions.HttpStatusException containing a 404 NOT FOUND status if the query returns an empty result.
      */
     @Get("/{id}")
-    @Operation(summary = "Get hash by ID", description = "Retrieves the sanitized metadata and current state of a specific hash.")
-    @ApiResponse(responseCode = "200", description = "Hash record found and returned.")
-    @ApiResponse(responseCode = "400", description = "Malformed identifier format provided.")
-    @ApiResponse(responseCode = "404", description = "Hash not found for the provided identifier.")
-    public Mono<MutableHttpResponse<HashResponse>> getById(@PathVariable String id) {
+    @Operation(
+            summary = "Get hash by ID",
+            description = "Retrieves the sanitized metadata, current operational state, and algorithms details of a specific hash registry."
+    )
+    @ApiResponse(responseCode = "200", description = "Hash record found and returned successfully.")
+    @ApiResponse(responseCode = "400", description = "Malformed identifier format provided (must comply with UUID canonical standard).")
+    @ApiResponse(responseCode = "404", description = "No hash record exists for the provided system identifier.")
+    public Mono<MutableHttpResponse<HashResponse>> getById(
+            @PathVariable @Parameter(name = "id", description = "The immutable UUID of the cryptographic hash registry", required = true, example = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d") String id
+    ) {
         return getHashUseCase.execute(new GetHashQuery(id))
                 .map(HashResponse::fromDomain)
                 .map(HttpResponse::ok)
@@ -98,24 +118,29 @@ public class HashController {
 
     /**
      * Lists hashes for a specific tenant with optional status filtering and pagination.
+     * <p>Performs a secure, paginated multidimensional search strictly bounded to the requested tenant environment.</p>
      *
-     * @param tenantId The unique identifier of the tenant, provided via the 'X-Tenant-Id' header.
-     * @param status   Optional filter to restrict results by their current {@link HashStatus} (e.g., ACTIVE, INACTIVE).
-     * @param page     The page index for pagination (zero-based). Default is 0.
-     * @param size     The number of records per page. Default is 20.
+     * @param tenantId The unique identifier of the tenant, provided via the mandatory 'X-Tenant-Id' header.
+     * @param status   Optional query parameter to restrict the result list by operational state.
+     * @param page     The zero-based page index. Default is 0.
+     * @param size     The maximum volume of records allowed in a single page stream. Default is 20.
      * @return A {@link Mono} emitting a {@link MutableHttpResponse} containing a {@link PagedHashResponse}.
+     * @throws io.micronaut.http.exceptions.HttpStatusException containing a 400 BAD REQUEST status if the tenant header is blank.
      */
     @Get
-    @Operation(summary = "List tenant hashes", description = "Returns a paginated stream of hashes belonging to a specific tenant.")
-    @ApiResponse(responseCode = "200", description = "Paginated list of hashes retrieved successfully.")
-    @ApiResponse(responseCode = "400", description = "Missing required 'X-Tenant-Id' header or invalid pagination parameters.")
-    @ApiResponse(responseCode = "500", description = "Internal server error during data retrieval.")
+    @Operation(
+            summary = "List tenant hashes",
+            description = "Returns a paginated stream of hashes belonging strictly to the tenant context declared in the request header."
+    )
+    @ApiResponse(responseCode = "200", description = "Paginated list of hashes retrieved and projected successfully.")
+    @ApiResponse(responseCode = "400", description = "Missing or blank 'X-Tenant-Id' header, or invalid pagination range parameters.")
+    @ApiResponse(responseCode = "500", description = "Internal server error occurred during multitenant lookup execution.")
     public Mono<MutableHttpResponse<PagedHashResponse>> list(
-            @Header("X-Tenant-Id") @NotBlank String tenantId,
-            @QueryValue @Nullable HashStatus status,
-            @QueryValue(defaultValue = "0") int page,
-            @QueryValue(defaultValue = "20") int size) {
-
+            @Header("X-Tenant-Id") @NotBlank @Parameter(name = "X-Tenant-Id", description = "Unique identifier of the tenant context for multi-tenancy rules", required = true, example = "tenant-prod-alpha-1") String tenantId,
+            @QueryValue @Nullable @Parameter(name = "status", description = "Optional operational state filter to scope the lookup", required = false, example = "ACTIVE") HashStatus status,
+            @QueryValue(defaultValue = "0") @Parameter(name = "page", description = "Zero-based index of the target page", schema = @Schema(defaultValue = "0")) int page,
+            @QueryValue(defaultValue = "20") @Parameter(name = "size", description = "The maximum volume of records to return in a single page", schema = @Schema(defaultValue = "20")) int size
+    ) {
         return listHashesUseCase.execute(new ListHashesQuery(tenantId, status, page, size))
                 .map(HashResponse::fromDomain)
                 .collectList()
@@ -128,21 +153,26 @@ public class HashController {
 
     /**
      * Suspends a hash's operational status by transitioning it to INACTIVE.
+     * <p>Deactivation is a reversible operational state change. The action requires a validated reason and context.</p>
      *
-     * @param id      The internal system identifier of the hash.
-     * @param request The {@link DeactivateHashRequest} containing the authorization context and reason.
-     * @return A {@link Mono} emitting a {@link MutableHttpResponse} with confirmation of the state transition.
+     * @param id      The internal system identifier (UUID) of the target hash.
+     * @param request The {@link DeactivateHashRequest} containing the executor authorization and suspension justification.
+     * @return A {@link Mono} emitting a {@link MutableHttpResponse} confirming the suspension details.
+     * @throws io.micronaut.http.exceptions.HttpStatusException containing a 409 CONFLICT status if the record is already inactive/revoked.
      */
     @Patch("/{id}/deactivate")
-    @Operation(summary = "Deactivate a hash", description = "Transitions an ACTIVE hash to INACTIVE status. Operation is audited.")
-    @ApiResponse(responseCode = "200", description = "Hash deactivated successfully.")
-    @ApiResponse(responseCode = "400", description = "Invalid request payload or validation failure.")
-    @ApiResponse(responseCode = "404", description = "Hash not found for the provided identifier.")
-    @ApiResponse(responseCode = "409", description = "Hash is already in an INACTIVE or REVOKED state.")
+    @Operation(
+            summary = "Deactivate a hash",
+            description = "Transitions an ACTIVE hash to an INACTIVE status. This operation is non-destructive, fully reversible, and audited."
+    )
+    @ApiResponse(responseCode = "200", description = "Hash successfully transitioned to INACTIVE state and audited.")
+    @ApiResponse(responseCode = "400", description = "Invalid request payload or malformed UUID parameter.")
+    @ApiResponse(responseCode = "404", description = "No hash record exists for the provided system identifier.")
+    @ApiResponse(responseCode = "409", description = "State transition conflict: hash is already INACTIVE or permanently REVOKED.")
     public Mono<MutableHttpResponse<DeactivateHashResponse>> deactivate(
-            @PathVariable String id,
-            @Body @Valid DeactivateHashRequest request) {
-
+            @PathVariable @Parameter(name = "id", description = "The immutable UUID of the target hash registry", required = true, example = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d") String id,
+            @Body @Valid @Parameter(description = "Deactivation request payload detailing executor and justification", required = true) DeactivateHashRequest request
+    ) {
         return deactivateHashUseCase.execute(request.toCommand(id))
                 .map(token -> DeactivateHashResponse.fromDomain(token, request.executor(), request.reason()))
                 .map(HttpResponse::ok)
@@ -152,22 +182,27 @@ public class HashController {
     }
 
     /**
-     * Restores an inactive hash to its operational state by transitioning it to ACTIVE.
+     * Restores an inactive hash to its operational state (ACTIVE).
+     * <p>Enables the hash to resume operational activities. Validates that the record is in a non-terminal reversible state.</p>
      *
-     * @param id      The internal system identifier of the hash.
-     * @param request The {@link ReactivateHashRequest} containing the authorization context.
-     * @return A {@link Mono} emitting a {@link MutableHttpResponse} with the updated hash record.
+     * @param id      The internal system identifier (UUID) of the target hash.
+     * @param request The {@link ReactivateHashRequest} containing the executor context.
+     * @return A {@link Mono} emitting a {@link MutableHttpResponse} with the restored {@link HashResponse} record.
+     * @throws io.micronaut.http.exceptions.HttpStatusException containing a 409 CONFLICT status if the record is already ACTIVE or permanently REVOKED.
      */
     @Patch("/{id}/reactivate")
-    @Operation(summary = "Reactivate a hash", description = "Restores an INACTIVE hash to ACTIVE status. Operation is audited.")
-    @ApiResponse(responseCode = "200", description = "Hash reactivated successfully.")
-    @ApiResponse(responseCode = "400", description = "Invalid request payload or validation failure.")
-    @ApiResponse(responseCode = "404", description = "Hash not found for the provided identifier.")
-    @ApiResponse(responseCode = "409", description = "Hash cannot be reactivated (e.g., currently ACTIVE or permanently REVOKED).")
+    @Operation(
+            summary = "Reactivate a hash",
+            description = "Restores an INACTIVE hash registry back to its ACTIVE operational state. This action is audited."
+    )
+    @ApiResponse(responseCode = "200", description = "Hash successfully restored to ACTIVE state and audited.")
+    @ApiResponse(responseCode = "400", description = "Invalid request payload or malformed UUID parameter.")
+    @ApiResponse(responseCode = "404", description = "No hash record exists for the provided system identifier.")
+    @ApiResponse(responseCode = "409", description = "State transition conflict: hash cannot be reactivated (e.g., currently ACTIVE or permanently REVOKED).")
     public Mono<MutableHttpResponse<HashResponse>> reactivate(
-            @PathVariable String id,
-            @Body @Valid ReactivateHashRequest request) {
-
+            @PathVariable @Parameter(name = "id", description = "The immutable UUID of the target hash registry", required = true, example = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d") String id,
+            @Body @Valid @Parameter(description = "Reactivation request payload detailing executor authorization", required = true) ReactivateHashRequest request
+    ) {
         return reactivateHashUseCase.execute(request.toCommand(id))
                 .map(HashResponse::fromDomain)
                 .map(HttpResponse::ok)
@@ -178,22 +213,27 @@ public class HashController {
 
     /**
      * Permanently and irreversibly revokes a hash registry, transitioning it to a terminal REVOKED state.
-     * <p><b>Note:</b> This is a destructive operation (Zero Trust) and must be performed with elevated privileges.</p>
+     * <p><b>Destructive Operation (Zero Trust):</b> This transitions the entity to an irreversible terminal state.
+     * Any subsequent state mutations will be blocked forever. Requires maximum logging severity.</p>
      *
-     * @param id      The internal system identifier of the hash.
-     * @param request The {@link RevokeHashRequest} indicating the revoker's credentials and justification.
+     * @param id      The internal system identifier (UUID) of the target hash.
+     * @param request The {@link RevokeHashRequest} containing the revoker's credentials and justification.
      * @return A {@link Mono} emitting a {@link MutableHttpResponse} confirming the terminal revocation.
+     * @throws io.micronaut.http.exceptions.HttpStatusException containing a 409 CONFLICT status if the record is already REVOKED.
      */
     @Delete("/{id}")
-    @Operation(summary = "Revoke a hash", description = "Irreversibly transitions a hash to the REVOKED status (Zero Trust). Operation is heavily audited.")
+    @Operation(
+            summary = "Revoke a hash",
+            description = "Irreversibly transitions a hash registry to the terminal REVOKED state. Destructive operation that blocks future mutations."
+    )
     @ApiResponse(responseCode = "200", description = "Hash permanently revoked and audited successfully.")
-    @ApiResponse(responseCode = "400", description = "Invalid request payload or validation failure.")
-    @ApiResponse(responseCode = "404", description = "Hash not found for the provided identifier.")
-    @ApiResponse(responseCode = "409", description = "Hash is already in a REVOKED terminal state.")
+    @ApiResponse(responseCode = "400", description = "Invalid revocation payload or malformed UUID parameter.")
+    @ApiResponse(responseCode = "404", description = "No hash record exists for the provided system identifier.")
+    @ApiResponse(responseCode = "409", description = "State conflict: hash is already in a terminal REVOKED state.")
     public Mono<MutableHttpResponse<HashResponse>> revoke(
-            @PathVariable String id,
-            @Body @Valid RevokeHashRequest request) {
-
+            @PathVariable @Parameter(name = "id", description = "The immutable UUID of the target hash registry", required = true, example = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d") String id,
+            @Body @Valid @Parameter(description = "Revocation request payload containing justification and elevated authority", required = true) RevokeHashRequest request
+    ) {
         return revokeHashUseCase.execute(request.toCommand(id))
                 .map(HashResponse::fromDomain)
                 .map(HttpResponse::ok)
@@ -204,16 +244,23 @@ public class HashController {
 
     /**
      * Retrieves the entire immutable forensic audit trail mapped to a specific cryptographic hash.
+     * <p>This audit trail lists all state transitions, reasons, timestamps, and executors in chronological order.</p>
      *
      * @param id The targeted business entity identifier (Hash ID).
-     * @return A {@link Mono} emitting a {@link MutableHttpResponse} containing the list of sequential audit logs.
+     * @return A {@link Mono} emitting a {@link MutableHttpResponse} containing the sequential audit history list.
+     * @throws io.micronaut.http.exceptions.HttpStatusException containing a 404 NOT FOUND if the target entity does not exist.
      */
     @Get("/{id}/audit")
-    @Operation(summary = "Get audit trail", description = "Retrieves the complete immutable forensic history of state mutations for a specific hash.")
-    @ApiResponse(responseCode = "200", description = "Audit logs retrieved successfully.")
+    @Operation(
+            summary = "Get audit trail",
+            description = "Retrieves the complete immutable forensic history of state mutations, deactivations, reactivations, or revocations for a specific hash."
+    )
+    @ApiResponse(responseCode = "200", description = "Audit trail successfully found and projected.")
     @ApiResponse(responseCode = "400", description = "Invalid or blank entity identifier format.")
-    @ApiResponse(responseCode = "404", description = "Hash not found for the provided identifier.")
-    public Mono<MutableHttpResponse<List<HashAuditResponse>>> getAuditTrail(@PathVariable String id) {
+    @ApiResponse(responseCode = "404", description = "No audit log history exists for the provided identifier.")
+    public Mono<MutableHttpResponse<List<HashAuditResponse>>> getAuditTrail(
+            @PathVariable @Parameter(name = "id", description = "The business entity identifier (Hash ID) to fetch forensic history for", required = true, example = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d") String id
+    ) {
         return getAuditLogsUseCase.execute(id)
                 .map(HashAuditResponse::fromDomain)
                 .collectList()

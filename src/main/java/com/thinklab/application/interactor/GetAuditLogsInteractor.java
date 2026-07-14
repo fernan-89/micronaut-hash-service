@@ -16,13 +16,14 @@ import java.util.Objects;
  * It strictly adheres to the Clean Architecture principles by acting as an orchestrator,
  * ensuring that data access details remain encapsulated behind the {@link HashAuditRepositoryPort}.</p>
  *
- * <p><b>Architectural Roles:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- * <li><b>Reactive Orquestration:</b> Implements non-blocking retrieval of audit streams.</li>
- * <li><b>Invariant Protection:</b> Validates input parameters (e.g., non-blank entity IDs)
- * before triggering repository operations.</li>
- * <li><b>Observability:</b> Logs forensic retrieval attempts for system traceability.</li>
+ * <li><b>Reactive Orchestration:</b> Implements non-blocking retrieval of audit streams.</li>
+ * <li><b>Invariant Protection:</b> Validates input parameters (Fail-Fast) before triggering repository operations.</li>
+ * <li><b>Telemetry:</b> Structured logging tags track the lifecycle of the forensic retrieval pipeline.</li>
  * </ul>
+ *
+ * @version 1.0.0
  */
 @Slf4j
 @Singleton
@@ -32,24 +33,27 @@ public class GetAuditLogsInteractor implements GetAuditLogsUseCase {
     private final HashAuditRepositoryPort auditRepository;
 
     /**
-     * Executes the retrieval of the audit trail for a specified entity.
+     * Executes the retrieval of the immutable audit trail for a specified entity.
      *
      * @param entityId The unique system identifier for which the audit trail is requested.
      * @return A {@link Flux} of {@link HashAudit} records.
-     * @throws IllegalArgumentException if the provided entityId is null or blank.
+     * @throws IllegalArgumentException if the provided entityId is null or blank (Fail-Fast).
      */
     @Override
     @NonNull
     public Flux<HashAudit> execute(@NonNull String entityId) {
-        log.debug("Application Request: Retrieving audit logs for entity ID [{}]", entityId);
+        Objects.requireNonNull(entityId, "Entity ID cannot be null.");
 
-        if (Objects.requireNonNull(entityId, "Entity ID cannot be null").isBlank()) {
-            log.error("Application Error: Attempted to retrieve audit logs with blank ID");
-            return Flux.error(new IllegalArgumentException("Entity ID cannot be blank"));
-        }
+        return Flux.defer(() -> {
+            if (entityId.isBlank()) {
+                log.warn("[ACTION: GET_AUDIT] - Orchestration halted: Entity ID is blank.");
+                return Flux.error(new IllegalArgumentException("Entity ID cannot be blank."));
+            }
 
-        return auditRepository.findByEntityId(entityId)
-                .doOnComplete(() -> log.debug("Application Success: Audit trail retrieved for ID [{}]", entityId))
-                .doOnError(e -> log.error("Application Error: Failed to retrieve audit trail for ID [{}]: {}", entityId, e.getMessage()));
+            return auditRepository.findByEntityId(entityId)
+                    .doOnSubscribe(s -> log.info("[ACTION: GET_AUDIT] [ID: {}] - Initiating forensic trail retrieval.", entityId))
+                    .doOnComplete(() -> log.info("[ACTION: GET_AUDIT] [ID: {}] - Forensic trail retrieval completed successfully.", entityId))
+                    .doOnError(error -> log.error("[ACTION: GET_AUDIT] [ID: {}] - CRITICAL: Forensic trail retrieval failed: {}", entityId, error.getMessage()));
+        });
     }
 }
