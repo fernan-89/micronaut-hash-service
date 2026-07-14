@@ -1,7 +1,7 @@
 package com.thinklab.infrastructure.adapter.out.mongo.repository;
 
 import com.thinklab.infrastructure.adapter.out.mongo.entity.HashAuditEntity;
-import io.micronaut.core.annotation.NonNull;
+import jakarta.annotation.Nonnull;
 import io.micronaut.data.mongodb.annotation.MongoRepository;
 import io.micronaut.data.repository.reactive.ReactorCrudRepository;
 import reactor.core.publisher.Flux;
@@ -9,51 +9,52 @@ import reactor.core.publisher.Flux;
 import java.util.UUID;
 
 /**
- * Micronaut Data Repository: Reactive persistence interface for {@link HashAuditEntity}.
- * This repository handles the append-only storage of forensic audit records. It utilizes
- * Micronaut Data's AOT (Ahead-of-Time) compilation to provide highly performant,
- * non-blocking access to the MongoDB "hash_audit" collection.
+ * Infrastructure Adapter: Reactive repository for {@link HashAuditEntity} persistence.
+ * <p>This interface defines the infrastructure-level contract for the storage of immutable
+ * forensic audit records. It implements the {@link com.thinklab.application.port.out.HashAuditRepositoryPort}
+ * using MongoDB, leveraging Micronaut Data's AOT (Ahead-of-Time) compilation to ensure
+ * non-blocking, high-performance database interactions.</p>
  *
- * <p><b>Persistence Strategy (NASA Standards):</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li><b>Reactive Protocol:</b> Inherits from {@link ReactorCrudRepository} for
- *         native specialized MongoDB reactive support, ensuring proper bean injection.</li>
- *     <li><b>Forensic Integrity:</b> Designed for immutable trails; while standard CRUD
- *         is inherited, business rules prohibit updates or deletions of audit logs.</li>
- *     <li><b>AOT Optimized:</b> Query implementations are generated at compile-time,
- *         eliminating runtime reflection overhead and reducing memory footprint.</li>
+ * <li><b>Non-blocking:</b> Inherits from {@link ReactorCrudRepository} for native, high-throughput reactive MongoDB operations.</li>
+ * <li><b>Forensic Integrity:</b> Designed for append-only operations; business logic restricts updates or deletions of audit trails.</li>
+ * <li><b>AOT Optimized:</b> Query implementations are resolved at compile-time to eliminate reflection overhead.</li>
+ * <li><b>Data Segregation:</b> Optimized indices facilitate tenant-scoped queries to ensure compliance and privacy.</li>
  * </ul>
+ *
+ * @version 1.0.0
  */
 @MongoRepository
 public interface HashAuditMongoRepository extends ReactorCrudRepository<HashAuditEntity, String> {
 
     /**
-     * Retrieves a stream of audit logs associated with a specific transaction group.
-     * Essential for tracing correlated operations across the distributed system.
+     * Retrieves a reactive stream of audit logs correlated to a specific transaction identifier.
+     * Essential for reconstructing execution flows in distributed systems.
      *
-     * @param txId The unique transaction identifier used for correlation.
+     * @param txId The unique transaction identifier.
      * @return A {@link Flux} emitting audit entities for the requested transaction.
      */
-    @NonNull
-    Flux<HashAuditEntity> findByTxId(@NonNull String txId);
+    @Nonnull
+    Flux<HashAuditEntity> findByTxId(@Nonnull String txId);
 
     /**
-     * Retrieves all audit logs belonging to a specific tenant, sorted by execution time.
-     * Optimized for security dashboards and compliance reports.
+     * Retrieves a reactive stream of audit logs scoped to a specific tenant, ordered chronologically
+     * by creation timestamp (newest first).
      *
      * @param tenantId The isolated tenant identifier.
-     * @return A {@link Flux} emitting the forensic trail for the tenant, ordered by newest first.
+     * @return A {@link Flux} emitting the forensic trail for the tenant.
      */
-    @NonNull
-    Flux<HashAuditEntity> findByTenantIdOrderByTimestampDesc(@NonNull String tenantId);
+    @Nonnull
+    Flux<HashAuditEntity> findByTenantIdOrderByTimestampDesc(@Nonnull String tenantId);
 
     /**
-     * Retrieves all forensic audit logs mapped to a specific business entity.
-     * Leverages the native UUID optimization to trace lifecycle modifications of target domain models.
+     * Retrieves the forensic audit trail mapped to a specific business entity.
+     * Leverages native UUID optimization for low-latency lifecycle reconstruction.
      *
-     * @param entityId The targeted business entity unique identifier (UUID).
-     * @return A {@link Flux} emitting matching audit entities for the requested business entity.
+     * @param entityId The unique identifier of the target domain entity (UUID).
+     * @return A {@link Flux} emitting the matching audit entities.
      */
-    @NonNull
-    Flux<HashAuditEntity> findByEntityId(@NonNull UUID entityId);
+    @Nonnull
+    Flux<HashAuditEntity> findByEntityId(@Nonnull UUID entityId);
 }

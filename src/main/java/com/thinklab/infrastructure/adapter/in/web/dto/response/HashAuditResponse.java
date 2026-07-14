@@ -1,36 +1,38 @@
 package com.thinklab.infrastructure.adapter.in.web.dto.response;
 
 import com.thinklab.domain.model.HashAudit;
-import io.micronaut.core.annotation.NonNull;
+import io.micronaut.core.annotation.Introspected;
 import io.micronaut.serde.annotation.Serdeable;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Nonnull;
 
 import java.time.Instant;
 import java.util.Map;
 
 /**
- * Response DTO: Public-facing projection of a forensic audit log entry.
- * This object represents a single point-in-time event recorded within the system's
- * immutable audit trail. It follows the Projection Pattern to ensure the Domain
- * remains shielded while providing high-quality traceability metadata to the client.
+ * Infrastructure DTO: Web response projection for the forensic audit trail of a {@link com.thinklab.domain.model.HashAudit}.
+ * <p>This DTO acts as the formal public-facing projection, ensuring that the domain model
+ * remains shielded from API-specific formatting while providing clear trace metadata
+ * to the consumer.</p>
  *
- * <p><b>Architectural Roles:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li><b>Immutable:</b> Java Record prevents side-effects during reactive streaming.</li>
- *     <li><b>Sanitized:</b> Only exposes business-relevant forensic data.</li>
- *     <li><b>AOT Optimized:</b> Compiled serialization via Micronaut Serde for low-latency.</li>
+ * <li><b>Projection Pattern:</b> Shields domain aggregates from external API consumers.</li>
+ * <li><b>Immutability:</b> Implemented as a Java record to ensure thread-safe, consistent data transfer.</li>
+ * <li><b>AOT Optimized:</b> Compiled serialization via Micronaut Serde for low-latency delivery.</li>
  * </ul>
  *
- * @param id        The unique system identifier for this audit record.
- * @param txId      The correlation transaction ID used to group related operations.
- * @param tenantId  The isolated tenant context where the operation occurred.
- * @param operation The standardized business operation name (e.g., GENERATION, REVOCATION).
- * @param status    The resulting status of the operation (e.g., SUCCESS, FAILED).
- * @param executorId The identity of the agent (user or service) that authorized the action.
- * @param timestamp The UTC instant when the event was recorded.
- * @param metadata  Contextual key-value pairs containing operation-specific details.
+ * @param id         The unique system identifier for this audit record.
+ * @param txId       The correlation transaction ID used to group related operations.
+ * @param tenantId   The isolated tenant context where the operation occurred.
+ * @param operation  The standardized business operation name.
+ * @param status     The resulting status of the operation.
+ * @param executorId The identity of the agent that authorized the action.
+ * @param timestamp  The UTC instant when the event was recorded.
+ * @param metadata   Contextual key-value pairs containing operation-specific details.
  */
 @Serdeable
+@Introspected
 @Schema(
         name = "HashAuditResponse",
         description = "Standardized forensic metadata representing a specific lifecycle event of a hash token."
@@ -68,13 +70,13 @@ public record HashAuditResponse(
      * @param domain The pure domain audit aggregate.
      * @return A mapped and serialized-ready response DTO.
      */
-    public static HashAuditResponse fromDomain(@NonNull HashAudit domain) {
+    public static HashAuditResponse fromDomain(@Nonnull HashAudit domain) {
         return new HashAuditResponse(
                 domain.id(),
                 domain.txId(),
                 domain.tenantId(),
-                domain.operation(), // Passado diretamente, pois já é String
-                domain.status(),    // Passado diretamente, pois já é String
+                domain.operation(),
+                domain.status(),
                 domain.executorId(),
                 domain.timestamp(),
                 domain.metadata() != null ? Map.copyOf(domain.metadata()) : Map.of()

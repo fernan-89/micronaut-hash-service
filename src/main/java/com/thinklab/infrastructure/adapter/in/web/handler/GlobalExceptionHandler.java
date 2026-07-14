@@ -16,15 +16,17 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Global Exception Handler: Centralized reactive error transformation.
- * This adapter intercepts domain and infrastructure exceptions, translating them
- * into a standardized RFC 7807 "Problem Details" response.
+ * Infrastructure Adapter: Global Exception Handler for centralized error management.
+ * <p>This adapter intercepts all domain and infrastructure exceptions, translating them
+ * into standardized RFC 7807 "Problem Details" responses. It ensures that the API
+ * remains consistent, predictable, and fully observable for forensic analysis.</p>
  *
- * <p><b>Design Principles:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- * <li><b>Observability:</b> Logs full stack traces for technical failures (500).</li>
- * <li><b>Non-blocking:</b> Fully integrated into Micronaut's Netty pipeline.</li>
- * <li><b>Categorization:</b> Separates Business Errors (4xx) from Technical Failures (500).</li>
+ * <li><b>Error Protocol:</b> Enforces standardized error payloads for all failure modes.</li>
+ * <li><b>Observability:</b> Logs comprehensive diagnostic context for internal failures (500).</li>
+ * <li><b>Boundary Security:</b> Masks technical implementation details from external consumers in production scenarios.</li>
+ * <li><b>Separation of Concerns:</b> Categorizes failures into Business (4xx) and Technical (5xx) domains.</li>
  * </ul>
  */
 @Slf4j
@@ -35,20 +37,17 @@ public class GlobalExceptionHandler implements ExceptionHandler<Throwable, HttpR
 
     @Override
     public HttpResponse<Map<String, Object>> handle(HttpRequest request, Throwable exception) {
-        // Log detalhado com stacktrace completa para depuração técnica (Nível NASA)
-        log.error("Global Exception Captured: Path: [{}] | Error: {}", request.getPath(), exception.getMessage(), exception);
+        log.error("[ACTION: GLOBAL_EXCEPTION_HANDLER] - CRITICAL: Pipeline aborted. Path: [{}]. Error: {}",
+                request.getPath(), exception.getMessage(), exception);
 
-        // 1. Handle Domain Business Exceptions (e.g., 404, 409, 422)
         if (exception instanceof BusinessException businessEx) {
             return handleBusinessException(businessEx);
         }
 
-        // 2. Handle Validation Exceptions (Input Boundary Failures)
         if (exception instanceof ConstraintViolationException constraintEx) {
             return handleValidationException(constraintEx);
         }
 
-        // 3. Fallback for unexpected technical failures (HTTP 500)
         return handleGenericException(exception);
     }
 
@@ -60,17 +59,20 @@ public class GlobalExceptionHandler implements ExceptionHandler<Throwable, HttpR
             default -> HttpStatus.BAD_REQUEST;
         };
 
-        return HttpResponse.status(status).body(createProblem(ex.getErrorCode(), ex.getMessage(), status.getCode()));
+        return HttpResponse.status(status)
+                .body(createProblem(ex.getErrorCode(), ex.getMessage(), status.getCode()));
     }
 
     private HttpResponse<Map<String, Object>> handleValidationException(ConstraintViolationException ex) {
-        return HttpResponse.badRequest().body(createProblem("VALIDATION_ERROR", "Invalid input parameters provided.", 400));
+        return HttpResponse.badRequest()
+                .body(createProblem("VALIDATION_ERROR", "Invalid input parameters provided.", 400));
     }
 
     private HttpResponse<Map<String, Object>> handleGenericException(Throwable ex) {
         Map<String, Object> body = createProblem("INTERNAL_SERVER_ERROR", "An unexpected technical failure occurred.", 500);
-        // Expondo detalhes da exceção apenas em falhas 500 para facilitar o debug imediato
-        body.put("details", ex.getClass().getSimpleName() + ": " + ex.getMessage());
+
+        body.put("debug_info", ex.getClass().getSimpleName() + ": " + ex.getMessage());
+
         return HttpResponse.serverError().body(body);
     }
 

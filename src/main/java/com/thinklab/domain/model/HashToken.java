@@ -2,9 +2,6 @@ package com.thinklab.domain.model;
 
 import com.thinklab.domain.valueobject.HashAlgorithm;
 import com.thinklab.domain.valueobject.HashStatus;
-import io.micronaut.data.annotation.Id;
-import io.micronaut.data.annotation.TypeDef;
-import io.micronaut.data.model.DataType;
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
 
@@ -12,21 +9,19 @@ import java.time.Instant;
 import java.util.Objects;
 
 /**
- * Aggregate Root: Core domain model representing a cryptographic hash or serial key.
- * Modeled as an immutable Java Record, ensuring thread-safety and side-effect-free
- * domain operations. State transitions are strictly governed by the underlying
- * {@link HashStatus} state machine.
+ * Domain Model: Aggregate Root representing a cryptographic hash or serial key.
+ * <p>This record serves as the immutable definition of a HashToken. State transitions
+ * are strictly governed by the underlying {@link HashStatus} state machine, ensuring
+ * that the aggregate remains in a valid, consistent state throughout its lifecycle.</p>
  *
- * <p><b>Architectural Rules:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li>Invariants are validated upon instantiation via the compact constructor.</li>
- *     <li>State mutations return a new instance (Functional Mutation).</li>
- *     <li>Concurrency is managed via versioning (Optimistic Locking).</li>
+ * <li><b>Domain Purity:</b> Zero framework dependencies; infrastructure mapping is strictly excluded.</li>
+ * <li><b>Functional Mutation:</b> State transitions return new instances, preserving immutability.</li>
+ * <li><b>Invariant Enforcement:</b> Constructor-level validation prevents illegal domain states.</li>
  * </ul>
  */
 public record HashToken(
-        @Id
-        @TypeDef(type = DataType.UUID) // Força o Micronaut/Mongo a codificar a String como BSON Binary UUID
         @Nonnull String id,
         @Nonnull String tenantId,
         @Nonnull String sourceService,
@@ -43,7 +38,7 @@ public record HashToken(
 
     /**
      * Compact constructor to enforce domain invariants.
-     * Prevents the creation of a HashToken in an invalid state.
+     * Validates that the aggregate never enters an inconsistent state.
      */
     public HashToken {
         Objects.requireNonNull(id, "ID cannot be null.");
@@ -63,7 +58,7 @@ public record HashToken(
     }
 
     /**
-     * Semantic static factory for creating a new HashToken instance.
+     * Factory method for creating a new HashToken instance.
      *
      * @param id            Unique identifier.
      * @param tenantId      Identifier for multi-tenant isolation.
@@ -103,48 +98,48 @@ public record HashToken(
     /**
      * Transitions the token to INACTIVE state.
      *
-     * @param executor Identification of the system or user performing the action.
-     * @return A new instance of HashToken with updated status and audit fields.
+     * @param executor Identification of the agent performing the action.
+     * @return A new instance with updated status and audit fields.
      */
     @Nonnull
     public HashToken deactivate(@Nonnull String executor) {
         this.status.validateTransitionTo(HashStatus.INACTIVE);
         return new HashToken(
-                id(), tenantId(), sourceService(), payload(), generatedHash(),
-                algorithm(), HashStatus.INACTIVE, createdBy(), createdAt(),
-                executor, Instant.now(), version()
+                id, tenantId, sourceService, payload, generatedHash,
+                algorithm, HashStatus.INACTIVE, createdBy, createdAt,
+                executor, Instant.now(), version
         );
     }
 
     /**
-     * Transitions the token back to ACTIVE state.
+     * Transitions the token to ACTIVE state.
      *
-     * @param executor Identification of the system or user performing the action.
-     * @return A new instance of HashToken with updated status and audit fields.
+     * @param executor Identification of the agent performing the action.
+     * @return A new instance with updated status and audit fields.
      */
     @Nonnull
     public HashToken reactivate(@Nonnull String executor) {
         this.status.validateTransitionTo(HashStatus.ACTIVE);
         return new HashToken(
-                id(), tenantId(), sourceService(), payload(), generatedHash(),
-                algorithm(), HashStatus.ACTIVE, createdBy(), createdAt(),
-                executor, Instant.now(), version()
+                id, tenantId, sourceService, payload, generatedHash,
+                algorithm, HashStatus.ACTIVE, createdBy, createdAt,
+                executor, Instant.now(), version
         );
     }
 
     /**
-     * Irreversibly revokes the token (Terminal state).
+     * Transitions the token to REVOKED state (Terminal).
      *
-     * @param executor Identification of the system or user performing the action.
-     * @return A new instance of HashToken in REVOKED state.
+     * @param executor Identification of the agent performing the action.
+     * @return A new instance with updated status and audit fields.
      */
     @Nonnull
     public HashToken revoke(@Nonnull String executor) {
         this.status.validateTransitionTo(HashStatus.REVOKED);
         return new HashToken(
-                id(), tenantId(), sourceService(), payload(), generatedHash(),
-                algorithm(), HashStatus.REVOKED, createdBy(), createdAt(),
-                executor, Instant.now(), version()
+                id, tenantId, sourceService, payload, generatedHash,
+                algorithm, HashStatus.REVOKED, createdBy, createdAt,
+                executor, Instant.now(), version
         );
     }
 }

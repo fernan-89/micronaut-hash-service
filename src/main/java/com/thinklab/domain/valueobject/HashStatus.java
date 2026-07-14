@@ -6,16 +6,16 @@ import jakarta.annotation.Nonnull;
 import java.util.Objects;
 
 /**
- * Value Object: Represents the lifecycle status of a HashToken entity.
- * This Enum acts as the central State Machine for the domain, enforcing strict
- * lifecycle transitions. It ensures that the HashToken cannot enter an invalid
- * state (e.g., reactivating a revoked token), maintaining audit and data integrity.
+ * Domain Value Object: State machine representing the lifecycle of a HashToken entity.
+ * <p>This enum enforces strict state transition rules, ensuring data integrity and
+ * business compliance. It acts as the central gatekeeper, preventing illegal
+ * operations on tokens based on their current lifecycle status.</p>
  *
- * <p><b>Lifecycle Rules:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li>ACTIVE: Initial state. Can be deactivated or revoked.</li>
- *     <li>INACTIVE: Paused state. Can be reactivated or revoked.</li>
- *     <li>REVOKED: Terminal state. No further transitions allowed (Zero Trust).</li>
+ * <li><b>Deterministic State Machine:</b> Strictly defines valid and invalid transitions.</li>
+ * <li><b>Compliance Enforcement:</b> Prevents unauthorized state shifts (e.g., reactivating revoked tokens).</li>
+ * <li><b>Zero Trust:</b> Treats REVOKED as a terminal state with no exit path.</li>
  * </ul>
  */
 public enum HashStatus {
@@ -58,16 +58,16 @@ public enum HashStatus {
     }
 
     /**
-     * Internal state machine logic using Java 21 switch expressions.
+     * Evaluates if the transition to the target status is legally permitted.
      *
      * @param targetStatus The desired state.
-     * @return true if the transition is legally allowed.
+     * @return true if the transition is allowed.
      */
     public boolean canTransitionTo(@Nonnull HashStatus targetStatus) {
         return switch (this) {
             case ACTIVE -> targetStatus == INACTIVE || targetStatus == REVOKED;
             case INACTIVE -> targetStatus == ACTIVE || targetStatus == REVOKED;
-            case REVOKED -> false; // Terminal state: Zero Trust enforced.
+            case REVOKED -> false;
         };
     }
 }

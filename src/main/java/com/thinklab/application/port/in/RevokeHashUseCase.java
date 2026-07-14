@@ -6,28 +6,30 @@ import jakarta.annotation.Nonnull;
 import reactor.core.publisher.Mono;
 
 /**
- * Input Port (UseCase): Defines the contract for permanently revoking a cryptographic hash or serial key.
- * This interface represents the terminal entry point in the token lifecycle. Revocation is
- * an irreversible action under the Zero Trust principle, ensuring that once a token is
- * revoked, it cannot be transitioned back to any other state.
+ * Application Port: Input boundary for the permanent revocation of an {@link HashToken}.
+ * <p>This interface defines the use case contract for the irreversible transition of a
+ * cryptographic hash registry to a terminal REVOKED state. Designed for Zero Trust
+ * environments, it ensures that all revocation events are subject to strict business
+ * validation and comprehensive forensic auditing.</p>
  *
- * <p><b>Contractual Obligations:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li>Implementation must be strictly non-blocking, returning a {@link Mono}.</li>
- *     <li>Must validate the transition using the {@link com.thinklab.domain.valueobject.HashStatus} state machine.</li>
- *     <li>Must signal {@link com.thinklab.domain.exception.HashNotFoundException} if the target ID does not exist.</li>
- *     <li>Must ensure that the revocation reason and executor identity are recorded in the audit trail.</li>
- *     <li>Should signal {@link com.thinklab.domain.exception.InvalidHashStatusException} for illegal state transitions.</li>
+ * <li><b>Non-blocking:</b> Fully integrated into the Project Reactor pipeline for high-throughput orchestration.</li>
+ * <li><b>Terminal State:</b> Enforces irreversibility, ensuring tokens cannot transition out of the REVOKED status.</li>
+ * <li><b>Audit-Mandatory:</b> Every revocation event triggers a mandatory forensic audit trail capturing business context and justification.</li>
+ * <li><b>Defensive Error Handling:</b> Provides standardized signaling for missing entities or illegal state transitions to maintain stream integrity.</li>
  * </ul>
+ *
+ * @version 1.0.0
  */
 public interface RevokeHashUseCase {
 
     /**
-     * Orchestrates the permanent and irreversible revocation of a hash registry.
+     * Orchestrates the irreversible revocation of a hash registry.
      *
-     * @param command The immutable command containing the target hash ID, executor, and mandatory reason.
-     * @return A {@link Mono} that emits the revoked {@link HashToken} upon successful transition.
-     * @throws IllegalArgumentException if the command is null.
+     * @param command The {@link RevokeHashCommand} encapsulating the target identifier, executor, and mandatory business justification.
+     * @return A {@link Mono} emitting the mutated {@link HashToken} in its terminal REVOKED state.
+     * @throws NullPointerException if the provided command is null, preserving pipeline integrity (Fail-Fast).
      */
     @Nonnull
     Mono<HashToken> execute(@Nonnull RevokeHashCommand command);

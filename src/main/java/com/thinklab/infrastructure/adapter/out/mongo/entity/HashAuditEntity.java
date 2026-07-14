@@ -2,14 +2,14 @@ package com.thinklab.infrastructure.adapter.out.mongo.entity;
 
 import com.thinklab.domain.model.HashAudit;
 import io.micronaut.core.annotation.Introspected;
-import io.micronaut.core.annotation.NonNull;
-import io.micronaut.core.annotation.Nullable;
 import io.micronaut.data.annotation.GeneratedValue;
 import io.micronaut.data.annotation.Id;
 import io.micronaut.data.annotation.Index;
 import io.micronaut.data.annotation.Indexes;
 import io.micronaut.data.annotation.MappedEntity;
 import io.micronaut.serde.annotation.Serdeable;
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 
 import java.time.Instant;
 import java.util.Map;
@@ -17,15 +17,15 @@ import java.util.UUID;
 
 /**
  * Infrastructure Entity: Persistence model for the forensic audit trail.
- * This record maps directly to the MongoDB "hash_audit" collection. It is designed
- * following the Append-Only principle to ensure the integrity of the audit history.
+ * <p>Maps directly to the MongoDB "hash_audit" collection. This entity implements the
+ * Append-Only principle, serving as a high-integrity container for immutable forensic event history.</p>
  *
- * <p><b>Persistence Strategy:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li><b>Immutable:</b> Implemented as a Java Record for thread-safety.</li>
- *     <li><b>BSON Decoupling:</b> Uses String identifiers for the primary key to shield higher layers from driver types,
- *         while preserving high-performance binary subtypes for internal entity correlations.</li>
- *     <li><b>Forensic Optimized:</b> Indexed for rapid retrieval by tenant, transaction, entity, or executor.</li>
+ * <li><b>Anti-Corruption Layer (ACL):</b> Encapsulates persistence schema, decoupling the Domain from database specifics.</li>
+ * <li><b>Forensic Integrity:</b> Enforces append-only semantics to maintain the immutable audit trail.</li>
+ * <li><b>Performance-Oriented:</b> Uses BSON Binary Subtype 4 for efficient entity correlation.</li>
+ * <li><b>Observability:</b> Provides multi-dimensional indexing for real-time audit retrieval.</li>
  * </ul>
  */
 @Serdeable
@@ -34,7 +34,7 @@ import java.util.UUID;
 @Indexes({
         @Index(columns = {"txId"}),
         @Index(columns = {"tenantId"}),
-        @Index(columns = {"entityId"}), // <-- Novo índice para buscas performáticas por Entidade
+        @Index(columns = {"entityId"}),
         @Index(columns = {"executorId"}),
         @Index(columns = {"timestamp"})
 })
@@ -43,25 +43,25 @@ public record HashAuditEntity(
         @GeneratedValue
         String id,
 
-        @NonNull
+        @Nonnull
         String txId,
 
-        @NonNull
+        @Nonnull
         String tenantId,
 
-        @NonNull
-        UUID entityId, // 🚀 STAFF ENGINEER NOTE: Armazenamento nativo otimizado (BSON Binary Subtype 4)
+        @Nonnull
+        UUID entityId,
 
-        @NonNull
+        @Nonnull
         String operation,
 
-        @NonNull
+        @Nonnull
         String status,
 
-        @NonNull
+        @Nonnull
         String executorId,
 
-        @NonNull
+        @Nonnull
         Instant timestamp,
 
         @Nullable
@@ -74,12 +74,12 @@ public record HashAuditEntity(
      * @param domain The domain aggregate record.
      * @return A mapped infrastructure entity instance.
      */
-    public static HashAuditEntity fromDomain(@NonNull HashAudit domain) {
+    public static HashAuditEntity fromDomain(@Nonnull HashAudit domain) {
         return new HashAuditEntity(
                 domain.id(),
                 domain.txId(),
                 domain.tenantId(),
-                UUID.fromString(domain.entityId()), // Converte a String de domínio para o UUID persistido
+                UUID.fromString(domain.entityId()),
                 domain.operation(),
                 domain.status(),
                 domain.executorId(),
@@ -98,7 +98,7 @@ public record HashAuditEntity(
                 id,
                 txId,
                 tenantId,
-                entityId.toString(), // Converte o UUID interno de volta para a String de domínio
+                entityId.toString(),
                 operation,
                 status,
                 executorId,

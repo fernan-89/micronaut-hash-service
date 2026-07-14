@@ -8,20 +8,20 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 /**
- * Request DTO: Input payload for hash deactivation.
- * This DTO acts as the web-facing representation of the deactivation intent.
- * It enforces strict validation on the executor and reason fields, ensuring
- * high-quality forensic metadata is captured at the edge.
+ * Infrastructure DTO: Web request payload for the deactivation of a {@link com.thinklab.domain.model.HashToken}.
+ * <p>This DTO acts as the formal interface definition for the HTTP deactivation endpoint.
+ * It enforces input validation at the edge, ensuring that only syntactically correct
+ * forensic metadata enters the Application layer.</p>
  *
- * <p><b>Architectural Role:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li><b>Protocol Translation:</b> Maps incoming JSON to the internal Domain Command.</li>
- *     <li><b>Defensive Boundary:</b> Prevents malformed requests from entering the system.</li>
- *     <li><b>AOT Ready:</b> Compiled serialization via Micronaut Serde.</li>
+ * <li><b>Protocol Translation:</b> Decouples external API contracts from internal Application Command structures.</li>
+ * <li><b>Edge Validation:</b> Enforces schema compliance and business constraints before processing.</li>
+ * <li><b>Observability-Ready:</b> Carries mandatory audit metadata (executor/reason) required for compliance reporting.</li>
  * </ul>
  *
- * @param executor The user or system account authorizing the deactivation.
- * @param reason   The business justification (Required for compliance/audit).
+ * @param executor The principal identifier of the user or system authorizing this action.
+ * @param reason   The business justification provided for the deactivation.
  */
 @Serdeable
 @Introspected
@@ -42,12 +42,12 @@ public record DeactivateHashRequest(
 ) {
 
     /**
-     * Maps the web request DTO to the application command.
-     * This method facilitates the transition from the Infrastructure layer to the 
-     * Application layer by combining the body parameters with the path variable.
+     * Maps the web request DTO to the domain-compliant application command.
+     * This method acts as the translation layer between the Transport Protocol (HTTP)
+     * and the Application Use Case boundary.
      *
      * @param hashId The unique identifier of the hash extracted from the HTTP Path.
-     * @return A validated and sanitized DeactivateHashCommand.
+     * @return A validated and sanitized {@link DeactivateHashCommand}.
      */
     public DeactivateHashCommand toCommand(String hashId) {
         return new DeactivateHashCommand(hashId, this.executor, this.reason);

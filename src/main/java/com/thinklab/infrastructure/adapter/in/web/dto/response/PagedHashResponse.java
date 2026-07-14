@@ -1,29 +1,29 @@
 package com.thinklab.infrastructure.adapter.in.web.dto.response;
 
 import io.micronaut.core.annotation.Introspected;
-import io.micronaut.core.annotation.NonNull;
 import io.micronaut.serde.annotation.Serdeable;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Nonnull;
 
 import java.util.List;
 
 /**
- * Response DTO: Standardized wrapper for paginated hash registry results.
- * This record follows the Collection Projection pattern to provide a consistent
- * structure for API consumers, including both the payload and the pagination
- * metadata required for advanced UI navigation and server-side cursor management.
+ * Infrastructure DTO: Paginated response projection for {@link HashResponse} collections.
+ * <p>This DTO acts as the formal interface definition for paginated retrieval endpoints.
+ * It provides a standardized structure for API consumers, including metadata required
+ * for advanced UI navigation and server-side management.</p>
  *
- * <p><b>Architectural Roles:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li><b>Immutable:</b> Java Record structure ensures safe state transfer in reactive pipelines.</li>
- *     <li><b>AOT Ready:</b> Pre-compiled serialization via Micronaut Serde for low-latency delivery.</li>
- *     <li><b>Self-Documented:</b> Extensive OpenAPI metadata for seamless client integration.</li>
+ * <li><b>Collection Projection:</b> Shields domain aggregates from external API consumers while providing pagination context.</li>
+ * <li><b>Immutability:</b> Implemented as a Java record to ensure thread-safe, consistent data transfer.</li>
+ * <li><b>AOT Optimized:</b> Compiled serialization via Micronaut Serde for low-latency delivery.</li>
  * </ul>
  *
  * @param content       The sanitized list of hash records for the current requested page.
- * @param totalElements The total count of existing hashes matching the filter criteria across all pages.
+ * @param totalElements The total count of existing hashes matching the filter criteria.
  * @param page          The current zero-indexed page number.
- * @param size          The total number of items per page (page limit).
+ * @param size          The total number of items per page.
  */
 @Serdeable
 @Introspected
@@ -47,16 +47,16 @@ public record PagedHashResponse(
 
     /**
      * Fluent factory method to assemble a paginated response wrapper.
-     * Centralizes the DTO creation to maintain controller readability.
+     * Centralizes DTO creation to maintain controller readability and consistency.
      *
      * @param content       Sanitized list of responses.
      * @param totalElements Total count from the repository.
      * @param page          Requested page index.
      * @param size          Requested page limit.
-     * @return A complete, immutable PagedHashResponse instance.
+     * @return A complete, immutable {@link PagedHashResponse} instance.
      */
     public static PagedHashResponse of(
-            @NonNull List<HashResponse> content,
+            @Nonnull List<HashResponse> content,
             long totalElements,
             int page,
             int size) {

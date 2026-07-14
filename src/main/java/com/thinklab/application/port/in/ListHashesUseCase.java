@@ -6,31 +6,30 @@ import jakarta.annotation.Nonnull;
 import reactor.core.publisher.Flux;
 
 /**
- * Input Port (UseCase): Defines the contract for listing cryptographic hash registries
- * with pagination and status filtering.
- * Following the CQRS principle, this interface represents a read-only operation
- * designed for high-performance data retrieval and streaming.
+ * Application Port: Input boundary for the paginated retrieval of {@link HashToken} registries.
+ * <p>This interface defines the use case contract for querying registry collections.
+ * Adhering to CQRS principles, it provides a read-only gateway that decouples
+ * external adapters from retrieval logic and underlying storage implementation,
+ * ensuring high-performance data access in multi-tenant environments.</p>
  *
- * <p><b>Contractual Obligations:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li>Implementation must be strictly non-blocking, returning a {@link Flux}.</li>
- *     <li>Must enforce data isolation by strictly adhering to the tenant context
- *         provided in the {@link ListHashesQuery}.</li>
- *     <li>Must correctly apply pagination and sorting metadata to the underlying
- *         persistence layer.</li>
- *     <li>Should support backpressure to ensure system stability during high-volume
- *         data emissions.</li>
+ * <li><b>Non-blocking:</b> Fully integrated into the Project Reactor pipeline for high-throughput stream processing.</li>
+ * <li><b>CQRS Compliant:</b> Strictly enforces a separation between read (query) and write (command) operations.</li>
+ * <li><b>Data Isolation:</b> Ensures that multi-tenant scoping is enforced on all retrieval operations.</li>
+ * <li><b>Backpressure-Aware:</b> Supports reactive streams to maintain system stability during high-volume data egress.</li>
  * </ul>
+ *
+ * @version 1.0.0
  */
 public interface ListHashesUseCase {
 
     /**
-     * Executes the paginated retrieval process for hash tokens based on filter criteria.
+     * Orchestrates the paginated, reactive retrieval of hash token registries based on filter criteria.
      *
-     * @param query The immutable query object containing tenant context, optional status,
-     *              and pagination parameters.
-     * @return A {@link Flux} that emits a stream of {@link HashToken} matching the criteria.
-     * @throws IllegalArgumentException if the query is null.
+     * @param query The {@link ListHashesQuery} encapsulating tenant context, filter criteria, and pagination metadata.
+     * @return A {@link Flux} emitting a stream of {@link HashToken} matching the criteria.
+     * @throws NullPointerException if the provided query is null, preserving pipeline integrity (Fail-Fast).
      */
     @Nonnull
     Flux<HashToken> execute(@Nonnull ListHashesQuery query);

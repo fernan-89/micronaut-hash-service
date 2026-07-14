@@ -7,26 +7,28 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
-
-import java.util.Objects;
+import lombok.extern.slf4j.Slf4j;
 
 /**
- * Input Boundary: Query object for listing cryptographic hashes with pagination and filters.
- * This record ensures that list requests are sanitized and limited at the boundary to
- * prevent excessive resource consumption and database overhead.
+ * Application Query: Encapsulates filtering and pagination criteria for {@link com.thinklab.domain.model.HashToken} collections.
+ * <p>This immutable query object serves as the formal request structure for read-only listing operations.
+ * It enforces data isolation via mandatory tenant scoping, prevents resource exhaustion by
+ * capping page sizes, and ensures that all queries are sanitized before reaching the persistence layer.</p>
  *
- * <p><b>Invariants:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li>TenantId is mandatory for data isolation.</li>
- *     <li>Pagination limits are enforced (max 100 items per page).</li>
- *     <li>Status filter is optional but type-safe.</li>
+ * <li><b>Immutability:</b> Implemented as a Java record to ensure thread-safe, consistent query propagation.</li>
+ * <li><b>Data Isolation:</b> Strictly enforces tenant scoping to prevent cross-tenant data leakage.</li>
+ * <li><b>Resource Protection:</b> Enforces pagination boundaries (Max 100) to mitigate database load and DoS risks.</li>
+ * <li><b>Edge Validation:</b> Combines Jakarta Bean Validation with defensive programming to catch malformed queries at the boundary.</li>
  * </ul>
  *
- * @param tenantId The unique identifier for the tenant (Mandatory for isolation).
- * @param status   Optional filter to retrieve only hashes in a specific state.
+ * @param tenantId The unique identifier of the tenant (Mandatory for isolation).
+ * @param status   Optional filter to retrieve only hashes in a specific lifecycle state.
  * @param page     The page index (Starting from 0).
  * @param size     The number of records per page (Max 100).
  */
+@Slf4j
 @Introspected
 public record ListHashesQuery(
         @NotBlank(message = "Tenant ID is mandatory for security isolation")
@@ -44,10 +46,21 @@ public record ListHashesQuery(
         Integer size
 ) {
     /**
-     * Compact constructor for sanitization and default values.
+     * Compact constructor for defensive programming, input sanitization, and forensic logging.
+     * Acts as the final gatekeeper for query integrity, enforcing default pagination values
+     * and logging malformed attempts.
      */
     public ListHashesQuery {
-        tenantId = tenantId != null ? tenantId.trim() : null;
+        // Validation & Logging: Tenant isolation is non-negotiable
+        if (tenantId == null || tenantId.isBlank()) {
+            log.error("[ACTION: LIST_HASHES_VALIDATION] - CRITICAL: Pipeline aborted due to missing tenant context in query.");
+            throw new IllegalArgumentException("Tenant ID is mandatory for security isolation");
+        }
+
+        // Sanitization: Ensure clean ID for database lookup
+        tenantId = tenantId.trim();
+
+        // Default values: Ensure safe pagination defaults
         page = (page == null) ? 0 : page;
         size = (size == null) ? 20 : size;
     }

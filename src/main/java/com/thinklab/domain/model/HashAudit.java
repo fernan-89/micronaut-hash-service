@@ -9,22 +9,34 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Domain Model: Represents an immutable audit entry for cryptographic operations.
- * This record ensures "Append-Only" integrity, providing a high-fidelity audit trail
- * for security forensics and business compliance.
+ * Domain Model: Immutable aggregate representing a forensic audit event.
+ * <p>This model serves as the source of truth for all security-critical operations,
+ * guaranteeing the integrity of the audit trail through strictly immutable state.
+ * It is designed to be framework-agnostic, ensuring portability across the
+ * Application and Infrastructure layers.</p>
  *
- * <p><b>Architectural Rules:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li>Strictly immutable: Audit records cannot be modified once created.</li>
- *     <li>Pure Java: Zero framework dependencies to ensure domain portability.</li>
- *     <li>Standardized: Uses a consistent metadata map for flexible context capture.</li>
+ * <li><b>Immutability:</b> Ensures that audit history cannot be altered post-persistence, satisfying forensic requirements.</li>
+ * <li><b>Domain Portability:</b> Zero framework dependencies, allowing the logic to be reused across different infrastructure contexts.</li>
+ * <li><b>Defensive Integrity:</b> Validates all invariants at the point of instantiation to prevent corrupted domain states.</li>
  * </ul>
+ *
+ * @param id         The unique identifier for this specific audit entry.
+ * @param txId       The correlation identifier for the encompassing transaction.
+ * @param tenantId   The owner of the audited resource.
+ * @param entityId   The identifier of the business entity being audited.
+ * @param operation  The business operation type (e.g., CREATION, DEACTIVATION).
+ * @param status     The outcome of the operation (e.g., SUCCESS, FAILURE).
+ * @param executorId The identifier of the agent (user or system) authorizing the action.
+ * @param timestamp  The UTC instant when the event occurred.
+ * @param metadata   Contextual data providing additional details for forensic analysis.
  */
 public record HashAudit(
         @Nonnull String id,
         @Nonnull String txId,
         @Nonnull String tenantId,
-        @Nonnull String entityId, // 🚀 STAFF ENGINEER NOTE: Vincula diretamente o rastro forense ao ID do recurso de negócio auditado
+        @Nonnull String entityId,
         @Nonnull String operation,
         @Nonnull String status,
         @Nonnull String executorId,
@@ -33,8 +45,9 @@ public record HashAudit(
 ) {
 
     /**
-     * Compact constructor for invariant validation.
-     * Guarantees that every audit log has the minimum required context.
+     * Compact constructor enforcing domain invariants.
+     * Ensures that all required fields are non-null and that metadata is
+     * treated as an immutable map to prevent post-instantiation modification.
      */
     public HashAudit {
         Objects.requireNonNull(id, "Audit ID cannot be null.");
@@ -43,23 +56,23 @@ public record HashAudit(
         Objects.requireNonNull(entityId, "Entity ID cannot be null.");
         Objects.requireNonNull(operation, "Operation type is mandatory.");
         Objects.requireNonNull(status, "Operation status is mandatory.");
-        Objects.requireNonNull(executorId, "Executor identification is required.");
+        Objects.requireNonNull(executorId, "Executor identification is mandatory.");
         Objects.requireNonNull(timestamp, "Audit timestamp is mandatory.");
 
-        // Metadata is initialized as empty if null, ensuring no NullPointerExceptions in downstream logic.
         metadata = metadata != null ? Map.copyOf(metadata) : Collections.emptyMap();
     }
 
     /**
-     * Static factory method to create a new audit record with default initial values.
+     * Factory method for creating a new audit record.
+     * Generates system identifiers and timestamps automatically.
      *
      * @param tenantId   The owner of the audited resource.
-     * @param entityId   The targeted business entity identifier being audited.
-     * @param operation  The business action performed (e.g., CREATION, DEACTIVATION).
-     * @param status     The outcome of the operation (SUCCESS, FAILURE).
+     * @param entityId   The targeted business entity identifier.
+     * @param operation  The business action performed.
+     * @param status     The outcome of the operation.
      * @param executorId The system or user ID that authorized the action.
-     * @param metadata   Additional key-value pairs for context (e.g., reason, IP address).
-     * @return A fully initialized HashAudit instance.
+     * @param metadata   Additional key-value pairs for context.
+     * @return A fully initialized, immutable {@link HashAudit} instance.
      */
     @Nonnull
     public static HashAudit create(

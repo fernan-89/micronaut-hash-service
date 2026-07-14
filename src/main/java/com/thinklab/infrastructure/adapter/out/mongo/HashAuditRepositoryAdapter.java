@@ -15,19 +15,20 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Persistence Adapter: Implementation of the {@link HashAuditRepositoryPort} for MongoDB.
- * This class acts as a bridge between the Application Layer and the physical storage,
- * providing a sanitized interface for forensic audit trail persistence.
+ * Infrastructure Adapter: Implementation of the {@link HashAuditRepositoryPort} for MongoDB.
+ * <p>This adapter serves as the Anti-Corruption Layer (ACL) between the Domain layer and
+ * the infrastructure storage. It ensures that infrastructure-specific concerns (like entity
+ * mapping) remain decoupled from domain logic, while enforcing strict audit integrity.</p>
  *
- * <p><b>Architectural Roles:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li><b>Anti-Corruption Layer (ACL):</b> Encapsulates the translation between Domain
- *         models and Infrastructure entities.</li>
- *     <li><b>Reactive Protocol:</b> Leverages non-blocking I/O to ensure system responsiveness
- *         during high-volume audit writing.</li>
- *     <li><b>Append-Only Enforcement:</b> While inheriting standard operations, this adapter
- *         focuses on the immutability of recorded events.</li>
+ * <li><b>Anti-Corruption Layer (ACL):</b> Encapsulates the bidirectional translation between domain models and persistence entities.</li>
+ * <li><b>Non-blocking:</b> Leverages reactive streams to ensure minimal latency in logging critical events.</li>
+ * <li><b>Forensic Integrity:</b> Designed for append-only storage to maintain the immutable nature of audit trails.</li>
+ * <li><b>Operational Transparency:</b> Standardized logging ensures that persistence failures are traceable for forensic analysis.</li>
  * </ul>
+ *
+ * @version 1.0.0
  */
 @Slf4j
 @Singleton
@@ -37,72 +38,68 @@ public class HashAuditRepositoryAdapter implements HashAuditRepositoryPort {
     private final HashAuditMongoRepository repository;
 
     /**
-     * Records a new forensic audit entry into the MongoDB "hash_audit" collection.
+     * Persists an immutable forensic audit record.
      *
-     * @param audit The pure domain audit record to be persisted.
-     * @return A {@link Mono} emitting the saved domain audit instance.
+     * @param audit The domain audit record.
+     * @return A {@link Mono} emitting the persisted record.
+     * @throws NullPointerException if the audit object is null.
      */
     @Override
     @Nonnull
     public Mono<HashAudit> save(@Nonnull HashAudit audit) {
         Objects.requireNonNull(audit, "Audit record cannot be null for persistence");
 
-        log.debug("Persistence Adapter: Recording audit event for TX [{}] - Operation [{}]",
-                audit.txId(), audit.operation());
-
         return repository.save(HashAuditEntity.fromDomain(audit))
                 .map(HashAuditEntity::toDomain)
-                .doOnError(e -> log.error("Persistence Error: Failed to commit audit log for TX [{}]",
-                        audit.txId(), e));
+                .doOnSubscribe(s -> log.debug("[ACTION: PERSIST_AUDIT_LOG] - Initiating write operation for TX: {}", audit.txId()))
+                .doOnSuccess(saved -> log.debug("[ACTION: PERSIST_AUDIT_LOG] - Forensic audit event successfully committed. TX: {}", saved.txId()))
+                .doOnError(e -> log.error("[ACTION: PERSIST_AUDIT_LOG] - CRITICAL: Failed to commit audit log for TX: {}. Error: {}", audit.txId(), e.getMessage()));
     }
 
     /**
-     * Retrieves a stream of audit logs associated with a specific transaction.
+     * Retrieves the audit trail correlated to a specific transaction.
      *
-     * @param txId The unique transaction group identifier.
-     * @return A {@link Flux} of matching domain audit records.
+     * @param txId The transaction correlation identifier.
+     * @return A {@link Flux} of matching audit records.
      */
     @Override
     @Nonnull
     public Flux<HashAudit> findByTxId(@Nonnull String txId) {
         Objects.requireNonNull(txId, "Transaction ID is mandatory for retrieval");
 
-        log.trace("Persistence Adapter: Fetching audit trail for TX [{}]", txId);
-
         return repository.findByTxId(txId)
-                .map(HashAuditEntity::toDomain);
+                .map(HashAuditEntity::toDomain)
+                .doOnError(e -> log.error("[ACTION: FIND_AUDIT_TX] - Error retrieving logs for TX: {}. Error: {}", txId, e.getMessage()));
     }
 
     /**
-     * Retrieves all audit logs belonging to a specific tenant.
+     * Retrieves audit logs scoped to a specific tenant.
      *
      * @param tenantId The isolated tenant identifier.
-     * @return A {@link Flux} of domain audit records ordered by newest first.
+     * @return A {@link Flux} of audit records.
      */
     @Override
     @Nonnull
     public Flux<HashAudit> findByTenantId(@Nonnull String tenantId) {
-        Objects.requireNonNull(tenantId, "Tenant identifier is mandatory for audit listing");
+        Objects.requireNonNull(tenantId, "Tenant identifier is mandatory");
 
         return repository.findByTenantIdOrderByTimestampDesc(tenantId)
                 .map(HashAuditEntity::toDomain);
     }
 
     /**
-     * Retrieves all audit logs matching a specific entity identifier.
+     * Retrieves the forensic audit trail for a specific domain entity.
      *
      * @param entityId The targeted business entity identifier.
-     * @return A {@link Flux} of matching domain audit records.
+     * @return A {@link Flux} of matching audit records.
      */
     @Override
     @Nonnull
     public Flux<HashAudit> findByEntityId(@Nonnull String entityId) {
-        Objects.requireNonNull(entityId, "Entity identifier is mandatory for audit listing");
+        Objects.requireNonNull(entityId, "Entity identifier is mandatory");
 
-        log.trace("Persistence Adapter: Fetching audit trail for Entity [{}]", entityId);
-
-        // 🚀 STAFF ENGINEER NOTE: Realiza o parse seguro de String para UUID na camada de acl/infraestrutura
         return repository.findByEntityId(UUID.fromString(entityId))
-                .map(HashAuditEntity::toDomain);
+                .map(HashAuditEntity::toDomain)
+                .doOnError(e -> log.error("[ACTION: FIND_AUDIT_ENTITY] - Error retrieving logs for Entity: {}. Error: {}", entityId, e.getMessage()));
     }
 }

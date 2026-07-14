@@ -1,30 +1,32 @@
 package com.thinklab.application.usecase.command;
 
 import io.micronaut.core.annotation.Introspected;
-import jakarta.annotation.Nonnull;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.Objects;
 
 /**
- * Input Boundary: Command object representing the intent to permanently revoke a cryptographic hash.
- * This record enforces strict input validation using Jakarta Bean Validation and functional
- * sanitization. Revocation is a terminal state (Zero Trust), thus requiring a mandatory
- * business justification for security compliance.
+ * Application Command: Encapsulates the intent to permanently revoke a cryptographic {@link com.thinklab.domain.model.HashToken}.
+ * <p>This immutable command object serves as the formal request structure for terminal revocation workflows.
+ * Under the Zero Trust principle, this action is irreversible and requires mandatory business
+ * justification, ensuring strict compliance with forensic audit requirements.</p>
  *
- * <p><b>Architectural Rules:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li>Immutable: Ensures state consistency across the reactive execution pipeline.</li>
- *     <li>Terminal Action: Requires an explicit reason for forensics and auditability.</li>
- *     <li>Fail-Fast: Validates syntactic and business constraints at the application boundary.</li>
+ * <li><b>Immutability:</b> Implemented as a Java record to ensure thread-safe, consistent state propagation.</li>
+ * <li><b>Terminal State:</b> Formally documents the irreversible nature of the revocation action.</li>
+ * <li><b>Forensic Integrity:</b> Requires mandatory executor and detailed justification attributes for compliance logging.</li>
+ * <li><b>Edge Validation:</b> Combines Jakarta Bean Validation with defensive programming to sanitize and validate inputs at the boundary.</li>
  * </ul>
  *
  * @param hashId   The unique system identifier of the HashToken to be revoked.
- * @param executor The user or system account authorizing this terminal action.
- * @param reason   The mandatory business justification for the permanent revocation.
+ * @param executor The principal identifier of the user or system authorizing this terminal action.
+ * @param reason   The mandatory business justification for the permanent revocation (Critical for security forensics).
  */
+@Slf4j
 @Introspected
 public record RevokeHashCommand(
         @NotBlank(message = "Hash ID is mandatory")
@@ -41,17 +43,24 @@ public record RevokeHashCommand(
 ) {
 
     /**
-     * Compact constructor for defensive programming and input sanitization.
-     * Prevents leading/trailing whitespaces from polluting audit logs or breaking lookups.
+     * Compact constructor for defensive programming, input sanitization, and forensic logging.
+     * Acts as the final gatekeeper for data integrity, ensuring that transient inputs are
+     * sanitized and invalid attempts are logged for security analysis.
      */
     public RevokeHashCommand {
         Objects.requireNonNull(hashId, "hashId cannot be null");
         Objects.requireNonNull(executor, "executor cannot be null");
         Objects.requireNonNull(reason, "reason cannot be null");
 
-        // Sanitization: Trimming fields to ensure data integrity
+        // Sanitization: Normalize whitespace to prevent data contamination
         hashId = hashId.trim();
         executor = executor.trim();
         reason = reason.trim();
+
+        // Defense-in-depth: Validation check for non-web instantiation contexts
+        if (hashId.isBlank() || executor.isBlank() || reason.length() < 10) {
+            log.error("[ACTION: REVOKE_HASH_VALIDATION] - CRITICAL: Pipeline aborted due to malformed command input. [ID: {}] [EXECUTOR: {}]", hashId, executor);
+            throw new IllegalArgumentException("Invalid command state: hashId/executor must not be blank and reason must provide sufficient forensic context.");
+        }
     }
 }

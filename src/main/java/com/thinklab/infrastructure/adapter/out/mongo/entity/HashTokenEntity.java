@@ -4,49 +4,61 @@ import com.thinklab.domain.model.HashToken;
 import com.thinklab.domain.valueobject.HashAlgorithm;
 import com.thinklab.domain.valueobject.HashStatus;
 import io.micronaut.core.annotation.Introspected;
-import io.micronaut.core.annotation.NonNull;
-import io.micronaut.core.annotation.Nullable;
-import io.micronaut.data.annotation.Id;
-import io.micronaut.data.annotation.Version;
-import io.micronaut.data.annotation.MappedEntity;
+import io.micronaut.data.annotation.*;
 import io.micronaut.serde.annotation.Serdeable;
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 
 import java.time.Instant;
 import java.util.UUID;
 
 /**
  * Infrastructure Entity: Persistence model for the HashToken aggregate.
- * This record maps directly to the MongoDB "hash_token" collection.
+ * <p>Maps directly to the MongoDB "hash_token" collection. This entity serves as the
+ * persistent representation of the domain aggregate, optimized for high-throughput
+ * access and consistency verification.</p>
+ *
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
+ * <ul>
+ * <li><b>Anti-Corruption Layer (ACL):</b> Encapsulates persistence schema, decoupling the Domain from database specifics.</li>
+ * <li><b>Data Integrity:</b> Utilizes optimistic locking via versioning to prevent data collisions.</li>
+ * <li><b>Performance-Oriented:</b> Multi-dimensional indexing strategy for efficient lookup and state-based filtering.</li>
+ * </ul>
  */
 @Serdeable
 @Introspected
 @MappedEntity("hash_token")
+@Indexes({
+        @Index(columns = {"tenantId", "status"}),
+        @Index(columns = {"tenantId", "payload"}),
+        @Index(columns = {"tenantId", "generatedHash"})
+})
 public record HashTokenEntity(
         @Id
         UUID id,
 
-        @NonNull
+        @Nonnull
         String tenantId,
 
-        @NonNull
+        @Nonnull
         String sourceService,
 
-        @NonNull
+        @Nonnull
         String payload,
 
-        @NonNull
+        @Nonnull
         String generatedHash,
 
-        @NonNull
+        @Nonnull
         HashAlgorithm algorithm,
 
-        @NonNull
+        @Nonnull
         HashStatus status,
 
-        @NonNull
+        @Nonnull
         String createdBy,
 
-        @NonNull
+        @Nonnull
         Instant createdAt,
 
         @Nullable
@@ -60,9 +72,12 @@ public record HashTokenEntity(
 ) {
 
     /**
-     * Maps a domain model to a persistence entity.
+     * Factory method to map a pure Domain Aggregate to this Persistence Entity.
+     *
+     * @param domain The domain aggregate instance.
+     * @return A mapped infrastructure entity.
      */
-    public static HashTokenEntity fromDomain(@NonNull HashToken domain) {
+    public static HashTokenEntity fromDomain(@Nonnull HashToken domain) {
         return new HashTokenEntity(
                 UUID.fromString(domain.id()),
                 domain.tenantId(),
@@ -80,7 +95,9 @@ public record HashTokenEntity(
     }
 
     /**
-     * Maps a persistence entity back to the domain model.
+     * Maps the persistence entity back to the pure Domain Aggregate.
+     *
+     * @return A domain aggregate instance.
      */
     public HashToken toDomain() {
         return new HashToken(

@@ -3,6 +3,7 @@ package com.thinklab.domain.valueobject;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import jakarta.annotation.Nonnull;
+
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Collections;
@@ -10,25 +11,16 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Value Object: Type-Safe Enumeration representing supported cryptographic hashing algorithms.
- * This Enum acts as the source of truth for all hashing operations within the system.
- * It implements a strict fail-fast mechanism during class initialization: if the JVM
- * does not support a defined algorithm, an error is thrown immediately.
+ * Domain Value Object: Type-safe enumeration representing supported cryptographic hashing algorithms.
+ * <p>This enum acts as the definitive source of truth for all hashing operations. It enforces
+ * a strict fail-fast mechanism at class initialization, ensuring the environment supports
+ * the required algorithms before any business operations commence.</p>
  *
- * <p><b>Architectural Rules:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- * <li><b>Immutable:</b> The mapping of standard names is unmodifiable.</li>
- * <li><b>Defensive:</b> Validates algorithm availability upon instantiation of MessageDigest.</li>
- * <li><b>Serialization-Safe:</b> Uses {@link JsonCreator} and {@link JsonValue} for robust,
- * hifen-aware JSON-to-Enum conversion.</li>
- * </ul>
- *
- * <p><b>Supported Algorithms:</b></p>
- * <ul>
- * <li>SHA-256/512: Current industry standards for secure hashing.</li>
- * <li>SHA3-256/512: Latest NIST standards (Keccak), highly resilient.</li>
- * <li>BLAKE3-256: High-performance algorithm for high-throughput serial/MFA generation.</li>
- * <li>SHA-1/MD5: Legacy support only (Deprecated).</li>
+ * <li><b>Immutability:</b> All definitions and algorithm mappings are unmodifiable.</li>
+ * <li><b>Defensive Integrity:</b> Validates algorithm availability immediately via the {@link MessageDigest} API.</li>
+ * <li><b>Serialization-Ready:</b> Uses standard annotations for consistent JSON-to-Enum mapping across the infrastructure.</li>
  * </ul>
  */
 public enum HashAlgorithm {
@@ -44,33 +36,30 @@ public enum HashAlgorithm {
     SHA_512("SHA-512"),
 
     /**
-     * SHA3-256 cryptographic hash algorithm. The latest Keccak-based NIST standard.
+     * SHA3-256 cryptographic hash algorithm. NIST standard (Keccak).
      */
     SHA3_256("SHA3-256"),
 
     /**
-     * SHA3-512 cryptographic hash algorithm. The latest Keccak-based NIST standard
-     * for maximum security requirements.
+     * SHA3-512 cryptographic hash algorithm. NIST standard (Keccak) for maximum security.
      */
     SHA3_512("SHA3-512"),
 
     /**
-     * BLAKE3 (256-bit) cryptographic hash algorithm.
-     * Extremely fast. Ideal for high-throughput scenarios.
-     * <b>Note:</b> Requires Bouncy Castle provider to be registered in the JVM.
+     * BLAKE3 (256-bit) cryptographic hash algorithm. Optimized for high-throughput scenarios.
      */
     BLAKE3_256("BLAKE3-256"),
 
     /**
      * SHA-1 cryptographic hash algorithm.
-     * @deprecated Vulnerable to collision attacks. STRICTLY for legacy integrations.
+     * @deprecated Vulnerable to collision attacks. Retained for legacy integration only.
      */
     @Deprecated(since = "1.0")
     SHA_1("SHA-1"),
 
     /**
      * MD5 cryptographic hash algorithm.
-     * @deprecated Broken and highly vulnerable. Use ONLY for backwards compatibility.
+     * @deprecated Cryptographically broken. Retained only for legacy compatibility.
      */
     @Deprecated(since = "1.0")
     MD5("MD5");
@@ -91,12 +80,11 @@ public enum HashAlgorithm {
     }
 
     /**
-     * Returns the algorithm associated with the provided standard name.
-     * Used by Jackson during JSON deserialization via {@link JsonCreator}.
+     * Factory method for deserialization based on algorithm standard name.
      *
-     * @param name The standard name (e.g., "SHA-256").
-     * @return The corresponding HashAlgorithm.
-     * @throws IllegalArgumentException if the name is null or unsupported.
+     * @param name The algorithm standard name (e.g., "SHA-256").
+     * @return The corresponding {@link HashAlgorithm}.
+     * @throws IllegalArgumentException if the provided name is unsupported.
      */
     @JsonCreator
     @Nonnull
@@ -109,11 +97,9 @@ public enum HashAlgorithm {
     }
 
     /**
-     * Returns the standard algorithm name used by the Java Security API.
-     * Annotated with {@link JsonValue} to ensure consistent JSON serialization
-     * across the infrastructure layer.
+     * Retrieves the standard algorithm identifier.
      *
-     * @return The standard string identifier for this algorithm.
+     * @return The identifier string used by the Java Security API.
      */
     @JsonValue
     @Nonnull
@@ -122,10 +108,10 @@ public enum HashAlgorithm {
     }
 
     /**
-     * Obtains a ready-to-use MessageDigest instance for this algorithm.
+     * Obtains an initialized {@link MessageDigest} instance for the algorithm.
      *
-     * @return An initialized MessageDigest.
-     * @throws IllegalStateException if the algorithm becomes unavailable at runtime.
+     * @return An initialized digest.
+     * @throws IllegalStateException if the algorithm is unavailable in the current runtime environment.
      */
     @Nonnull
     public MessageDigest getMessageDigest() {
@@ -133,7 +119,7 @@ public enum HashAlgorithm {
             return MessageDigest.getInstance(this.standardName);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("Critical error: Algorithm " + this.standardName +
-                    " is not supported by the current JVM environment. Check if external providers are registered.", e);
+                    " is not supported by the current JVM environment.", e);
         }
     }
 }

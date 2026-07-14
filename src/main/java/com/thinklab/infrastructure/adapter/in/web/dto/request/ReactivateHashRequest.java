@@ -8,20 +8,20 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 /**
- * Request DTO: Input payload for reactivating an inactive cryptographic token.
- * This object serves as the external contract for reactivation requests, ensuring
- * that mandatory forensic metadata (executor and reason) is provided at the edge
- * to uphold Tier 3 security compliance.
+ * Infrastructure DTO: Web request payload for the reactivation of a {@link com.thinklab.domain.model.HashToken}.
+ * <p>This DTO acts as the formal interface definition for the HTTP reactivation endpoint.
+ * It enforces input validation at the edge, ensuring that only syntactically correct
+ * forensic metadata enters the Application layer.</p>
  *
- * <p><b>Architectural Roles:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li><b>Immutable:</b> Java Record prevents state mutation during reactive flow.</li>
- *     <li><b>AOT Ready:</b> Pre-compiled serialization for high-performance containers.</li>
- *     <li><b>Traceable:</b> Enforces business justifications for lifecycle transitions.</li>
+ * <li><b>Protocol Translation:</b> Decouples external API contracts from internal Application Command structures.</li>
+ * <li><b>Edge Validation:</b> Enforces schema compliance and business constraints before processing.</li>
+ * <li><b>Observability-Ready:</b> Carries mandatory audit metadata (executor/reason) required for compliance reporting.</li>
  * </ul>
  *
- * @param executor The user or system account authorizing the reactivation.
- * @param reason   The business justification for restoring the token status (Critical for audit).
+ * @param executor The principal identifier of the user or system authorizing this action.
+ * @param reason   The business justification provided for the reactivation.
  */
 @Serdeable
 @Introspected
@@ -42,15 +42,14 @@ public record ReactivateHashRequest(
 ) {
 
     /**
-     * Maps the web request DTO to the application command.
-     * This method facilitates the transition from the Infrastructure layer to the
-     * Application layer by combining the body parameters with the resource identifier.
+     * Maps the web request DTO to the domain-compliant application command.
+     * This method acts as the translation layer between the Transport Protocol (HTTP)
+     * and the Application Use Case boundary.
      *
-     * @param hashId The unique identifier of the hash extracted from the resource path.
-     * @return A validated and sanitized ReactivateHashCommand instance.
+     * @param hashId The unique identifier of the hash extracted from the HTTP Path.
+     * @return A validated and sanitized {@link ReactivateHashCommand}.
      */
     public ReactivateHashCommand toCommand(String hashId) {
         return new ReactivateHashCommand(hashId, this.executor, this.reason);
     }
 }
-

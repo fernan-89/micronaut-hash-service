@@ -10,23 +10,24 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
- * Request DTO: Input payload for cryptographic hash and serial key generation.
- * This object acts as the entry boundary for the API, enforcing strict syntactic
- * validation and providing metadata for automated OpenAPI documentation.
+ * Infrastructure DTO: Web request payload for the generation of a cryptographic {@link com.thinklab.domain.model.HashToken}.
+ * <p>This DTO acts as the formal interface definition for the HTTP generation endpoint.
+ * It enforces input validation at the edge, preventing malformed requests and resource
+ * exhaustion (DoS mitigation) before entering the Application layer.</p>
  *
- * <p><b>Architectural Roles:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li><b>Immutable:</b> Prevents payload tampering during the reactive pipeline.</li>
- *     <li><b>AOT Ready:</b> Uses Micronaut Serde for reflection-free serialization.</li>
- *     <li><b>Defensive:</b> Protects the system against OOM attacks via size limits.</li>
+ * <li><b>Protocol Translation:</b> Decouples external API contracts from internal Application Command structures.</li>
+ * <li><b>Edge Validation:</b> Enforces schema compliance and business constraints (e.g., payload size limits) before processing.</li>
+ * <li><b>Observability-Ready:</b> Captures mandatory context (tenant, source, executor) required for forensic auditability.</li>
  * </ul>
  *
- * @param tenantId      The unique identifier for the isolated tenant.
- * @param payload       The raw data to be hashed (Max 10,000 characters).
- * @param algorithm     The chosen cryptographic algorithm (SHA-256, BLAKE3, etc.).
- * @param sourceService The identifier of the requesting microservice.
- * @param executor      The identity of the agent authorizing the generation.
- * @param asSerialKey   Whether the result should be formatted as a serial key.
+ * @param tenantId      The unique identifier of the tenant requesting the generation.
+ * @param payload       The raw data to be hashed.
+ * @param algorithm     The cryptographic algorithm chosen for this operation.
+ * @param sourceService The name of the microservice or system invoking this action.
+ * @param executor      The principal identifier of the user or system authorizing this action.
+ * @param asSerialKey   Flag indicating if the output should be formatted as a serial key.
  */
 @Serdeable
 @Introspected
@@ -39,7 +40,7 @@ public record GenerateHashRequest(
         @Schema(description = "Isolated tenant identifier", example = "THINKLAB-PROD-01")
         String tenantId,
 
-        @NotBlank(message = "Payload cannot be empty")
+        @NotBlank(message = "Payload is mandatory")
         @Size(max = 10000, message = "Payload exceeds security limits (10k chars)")
         @Schema(description = "Raw content to be hashed", example = "raw-transaction-data-v1")
         String payload,
@@ -61,11 +62,11 @@ public record GenerateHashRequest(
 ) {
 
     /**
-     * Maps the incoming Web DTO to the internal Application Command.
-     * This transition ensures that the Infrastructure layer remains decoupled from
-     * the Application layer, applying sanitization during the conversion.
+     * Maps the web request DTO to the domain-compliant application command.
+     * This method acts as the translation layer between the Transport Protocol (HTTP)
+     * and the Application Use Case boundary.
      *
-     * @return A sanitized and validated GenerateHashCommand instance.
+     * @return A validated and sanitized {@link GenerateHashCommand}.
      */
     public GenerateHashCommand toCommand() {
         return new GenerateHashCommand(

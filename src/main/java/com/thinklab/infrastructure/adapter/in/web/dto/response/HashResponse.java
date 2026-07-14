@@ -4,34 +4,35 @@ import com.thinklab.domain.model.HashToken;
 import com.thinklab.domain.valueobject.HashAlgorithm;
 import com.thinklab.domain.valueobject.HashStatus;
 import io.micronaut.core.annotation.Introspected;
-import io.micronaut.core.annotation.NonNull;
-import io.micronaut.core.annotation.Nullable;
 import io.micronaut.serde.annotation.Serdeable;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 
 import java.time.Instant;
 
 /**
- * Response DTO: Public-facing projection of a cryptographic hash registry.
- * This record follows the Projection Pattern to transform the internal Domain Aggregate
- * into a sanitized, serialized representation suitable for API consumers.
+ * Infrastructure DTO: Web response projection for a cryptographic {@link com.thinklab.domain.model.HashToken}.
+ * <p>This DTO acts as the formal public-facing projection, ensuring that the domain model
+ * remains shielded from API-specific formatting while providing clear state
+ * metadata to the consumer.</p>
  *
- * <p><b>Architectural Roles:</b></p>
+ * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
  * <ul>
- *     <li><b>Immutable:</b> Java Record structure prevents state mutation during streaming.</li>
- *     <li><b>Sanitized:</b> Only exposes operational metadata, shielding domain internals.</li>
- *     <li><b>AOT Optimized:</b> Compiled serialization via Micronaut Serde for low footprint.</li>
+ * <li><b>Projection Pattern:</b> Shields domain aggregates from external API consumers.</li>
+ * <li><b>Immutability:</b> Implemented as a Java record to ensure thread-safe, consistent data transfer.</li>
+ * <li><b>AOT Optimized:</b> Compiled serialization via Micronaut Serde for low-latency delivery.</li>
  * </ul>
  *
- * @param id             Unique system identifier for the hash registry.
- * @param tenantId       The isolated tenant context owner.
- * @param sourceService  Identifier of the microservice that requested the generation.
- * @param generatedHash  The final calculated cryptographic hash string.
- * @param algorithm      The cryptographic standard used (e.g., SHA-256, BLAKE3).
- * @param status         The current lifecycle status (ACTIVE, INACTIVE, REVOKED).
- * @param createdAt      UTC timestamp of the initial generation.
- * @param updatedAt      UTC timestamp of the last status or metadata change.
- * @param version        Concurrency control version (Optimistic Locking).
+ * @param id            Unique system identifier for the hash registry.
+ * @param tenantId      The isolated tenant context owner.
+ * @param sourceService Identifier of the microservice that requested the generation.
+ * @param generatedHash The final calculated cryptographic hash string.
+ * @param algorithm     The cryptographic standard used.
+ * @param status        The current lifecycle status.
+ * @param createdAt     UTC timestamp of the initial generation.
+ * @param updatedAt     UTC timestamp of the last status or metadata change.
+ * @param version       Concurrency control version (Optimistic Locking).
  */
 @Serdeable
 @Introspected
@@ -74,9 +75,9 @@ public record HashResponse(
      * This transition ensures that infrastructure-level changes do not leak into the Domain.
      *
      * @param domain The pure domain aggregate instance.
-     * @return A mapped and sanitized HashResponse DTO.
+     * @return A mapped and sanitized {@link HashResponse}.
      */
-    public static HashResponse fromDomain(@NonNull HashToken domain) {
+    public static HashResponse fromDomain(@Nonnull HashToken domain) {
         return new HashResponse(
                 domain.id(),
                 domain.tenantId(),
