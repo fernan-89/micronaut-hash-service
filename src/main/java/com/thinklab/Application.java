@@ -24,7 +24,7 @@ import io.swagger.v3.oas.annotations.info.License;
  */
 @OpenAPIDefinition(
         info = @Info(
-                title = "Hash & Serial Registry API",
+                title = "hash-&-serial-registry",
                 version = "1.0.0",
                 description = "High-performance reactive service for generating, auditing, and managing the lifecycle of cryptographic tokens.",
                 contact = @Contact(name = "Thinklab Staff Engineering", email = "staff@thinklab.com"),
