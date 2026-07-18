@@ -52,7 +52,10 @@ dependencies {
     // -------------------------------------------------------------------------
     testImplementation("io.micronaut:micronaut-http-client")
     testImplementation("io.projectreactor:reactor-test") // Critical for testing Reactive Streams
+    testImplementation("org.mockito:mockito-core")
+    testImplementation("org.mockito:mockito-junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
 }
 
 application {

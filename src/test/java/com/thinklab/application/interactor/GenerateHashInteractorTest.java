@@ -36,13 +36,20 @@ class GenerateHashInteractorTest {
 
     @BeforeEach
     void setUp() {
+        // Os parâmetros agora respeitam a exata ordem do record GenerateHashCommand:
+        // 1. tenantId (String)
+        // 2. payload (String)
+        // 3. algorithm (HashAlgorithm)
+        // 4. sourceService (String)
+        // 5. executor (String)
+        // 6. asSerialKey (Boolean)
         command = new GenerateHashCommand(
                 "tenant-123",
                 "test-payload",
-                "service-alpha",
                 HashAlgorithm.SHA_256,
-                false,
-                "admin-user"
+                "service-alpha",
+                "admin-user",
+                false
         );
     }
 
