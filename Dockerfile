@@ -43,7 +43,7 @@ COPY --from=builder /home/gradle/src/build/libs/*-all.jar app.jar
 
 # Define default memory limits and ensure Java respects container orchestration
 # memory and CPU constraints.
-ENV JAVA_OPTS="-Xmx512m -XX:+UseContainerSupport"
+ENV JAVA_OPTS="-Xmx256m -XX:+UseContainerSupport"
 
 # Define default MongoDB connection URI (can be overridden via IntelliJ or docker run)
 ENV MONGODB_URI="mongodb://localhost:27017/thinklab"

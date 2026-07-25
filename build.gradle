@@ -1,11 +1,25 @@
+// ==============================================================================================
+// /**
+//  * @file        build.gradle
+//  * @module      Thinklab Hash Service Build Manifest (Groovy DSL)
+//  * @description Comprehensive build lifecycle orchestration. This manifest defines
+//  * compilation phases, dependency resolution, Abstract Syntax Tree (AST)
+//  * manipulation (Lombok/Micronaut Processors), Ahead-of-Time (AOT) optimizations,
+//  * and Fat JAR packaging. Adheres to strict Zero-Trust and deterministic build protocols.
+//  *
+//  * @maintainer  Thinklab Systems Engineering Team
+//  * @java_target JDK 21 (LTS) - Virtual Threads & Pattern Matching enabled
+//  */
+// ==============================================================================================
+
 plugins {
-    id("io.micronaut.application") version "4.4.2"
-    id("io.micronaut.aot") version "4.4.2"
-    id("com.gradleup.shadow") version "8.3.0"
+    id 'io.micronaut.application' version '4.4.2'
+    id 'io.micronaut.aot' version '4.4.2'
+    id 'com.gradleup.shadow' version '8.3.0'
 }
 
-version = "0.1"
-group = "com.thinklab"
+version = '0.1'
+group = 'com.thinklab'
 
 repositories {
     mavenCentral()
@@ -13,53 +27,64 @@ repositories {
 
 dependencies {
     // -------------------------------------------------------------------------
-    // Compile-time Annotations & Processors
+    // /**
+    //  * @layer AST Manipulation & Compile-time Processors
+    //  * @note  ORDER IS CRITICAL. Lombok must run first to synthesize getters/setters/constructors
+    //  * before Micronaut's processors attempt to read the class metadata for DI and SerDes.
+    //  */
     // -------------------------------------------------------------------------
-    annotationProcessor("org.projectlombok:lombok:1.18.36")
-    compileOnly("org.projectlombok:lombok:1.18.36")
+    annotationProcessor 'org.projectlombok:lombok:1.18.36'
+    compileOnly 'org.projectlombok:lombok:1.18.36'
 
-    annotationProcessor("io.micronaut:micronaut-http-validation")
-    annotationProcessor("io.micronaut.serde:micronaut-serde-processor")
-    annotationProcessor("io.micronaut.validation:micronaut-validation-processor")
-    annotationProcessor("io.micronaut.data:micronaut-data-document-processor")
-    annotationProcessor("io.micronaut.openapi:micronaut-openapi")
-
-    // -------------------------------------------------------------------------
-    // Core Application Layer
-    // -------------------------------------------------------------------------
-    implementation("io.micronaut:micronaut-management")
-    implementation("io.micronaut:micronaut-http-client")
-    implementation("io.micronaut.serde:micronaut-serde-jackson")
-    implementation("io.micronaut.validation:micronaut-validation")
-    implementation("io.swagger.core.v3:swagger-annotations")
+    annotationProcessor 'io.micronaut:micronaut-http-validation'
+    annotationProcessor 'io.micronaut.serde:micronaut-serde-processor'
+    annotationProcessor 'io.micronaut.validation:micronaut-validation-processor'
+    annotationProcessor 'io.micronaut.data:micronaut-data-document-processor'
+    annotationProcessor 'io.micronaut.openapi:micronaut-openapi'
 
     // -------------------------------------------------------------------------
-    // Infrastructure Layer (Persistence & Reactivity)
+    // /**
+    //  * @layer Core Application & Management
+    //  */
     // -------------------------------------------------------------------------
-    implementation("io.projectreactor:reactor-core")
-    implementation("io.micronaut.data:micronaut-data-mongodb")
-    implementation("io.micronaut.mongodb:micronaut-mongo-reactive")
-    implementation("org.mongodb:mongodb-driver-reactivestreams")
+    implementation 'io.micronaut:micronaut-management'
+    implementation 'io.micronaut:micronaut-http-client'
+    implementation 'io.micronaut.serde:micronaut-serde-jackson'
+    implementation 'io.micronaut.validation:micronaut-validation'
+    implementation 'io.swagger.core.v3:swagger-annotations'
 
     // -------------------------------------------------------------------------
-    // Logging & Runtime
+    // /**
+    //  * @layer Infrastructure & Data Persistence (Reactive Paradigm)
+    //  */
     // -------------------------------------------------------------------------
-    runtimeOnly("ch.qos.logback:logback-classic")
-    runtimeOnly("org.yaml:snakeyaml") // Required for configuration
+    implementation 'io.projectreactor:reactor-core'
+    implementation 'io.micronaut.data:micronaut-data-mongodb'
+    implementation 'io.micronaut.mongodb:micronaut-mongo-reactive'
+    implementation 'org.mongodb:mongodb-driver-reactivestreams'
 
     // -------------------------------------------------------------------------
-    // Testing & Quality Assurance
+    // /**
+    //  * @layer Logging & Runtime Bootstrapping
+    //  */
     // -------------------------------------------------------------------------
-    testImplementation("io.micronaut:micronaut-http-client")
-    testImplementation("io.projectreactor:reactor-test") // Critical for testing Reactive Streams
-    testImplementation("org.mockito:mockito-core")
-    testImplementation("org.mockito:mockito-junit-jupiter")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    runtimeOnly 'ch.qos.logback:logback-classic'
+    runtimeOnly 'org.yaml:snakeyaml'
 
+    // -------------------------------------------------------------------------
+    // /**
+    //  * @layer Quality Assurance & Unit Testing
+    //  */
+    // -------------------------------------------------------------------------
+    testImplementation 'io.micronaut:micronaut-http-client'
+    testImplementation 'io.projectreactor:reactor-test'
+    testImplementation 'org.mockito:mockito-core'
+    testImplementation 'org.mockito:mockito-junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 application {
-    mainClass = "com.thinklab.Application"
+    mainClass = 'com.thinklab.Application'
 }
 
 java {
@@ -68,21 +93,36 @@ java {
     }
 }
 
+// -------------------------------------------------------------------------
+// /**
+//  * @directive Compilation Telemetry (Swagger UI Generation)
+//  */
+// -------------------------------------------------------------------------
+tasks.withType(JavaCompile) {
+    options.fork = true
+    options.forkOptions.jvmArgs << '-Dmicronaut.openapi.views.spec=swagger-ui.enabled=true,swagger-ui.theme=flattop'
+}
+
 graalvmNative {
     toolchainDetection = false
     binaries {
         all {
-            buildArgs.add("-H:+SharedArenaSupport")
+            buildArgs.add('-H:+SharedArenaSupport')
         }
     }
 }
 
+// -------------------------------------------------------------------------
+// /**
+//  * @directive Ahead-of-Time (AOT) Compilation Constraints
+//  */
+// -------------------------------------------------------------------------
 micronaut {
-    runtime("netty")
-    testRuntime("junit5")
+    runtime('netty')
+    testRuntime('junit5')
     processing {
         incremental(true)
-        annotations("com.thinklab.*")
+        annotations('com.thinklab.*')
     }
     aot {
         optimizeServiceLoading = false
