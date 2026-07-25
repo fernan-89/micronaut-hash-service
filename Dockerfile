@@ -45,9 +45,13 @@ COPY --from=builder /home/gradle/src/build/libs/*-all.jar app.jar
 # memory and CPU constraints.
 ENV JAVA_OPTS="-Xmx512m -XX:+UseContainerSupport"
 
-# Expose the standard Micronaut application port
-EXPOSE 8080
+# Define default MongoDB connection URI (can be overridden via IntelliJ or docker run)
+ENV MONGODB_URI="mongodb://localhost:27017/thinklab"
+
+# Define default application port (reusable for other stack services)
+ENV PORT=8080
+EXPOSE ${PORT}
 
 # Use a shell wrapper for the entrypoint to allow for environment variable
-# expansion (e.g., JAVA_OPTS) during container startup.
+# expansion (e.g., JAVA_OPTS, PORT and MONGODB_URI) during container startup.
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
