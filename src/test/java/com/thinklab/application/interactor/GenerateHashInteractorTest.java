@@ -88,7 +88,7 @@ class GenerateHashInteractorTest {
         StepVerifier.create(interactor.execute(command))
                 .expectErrorMatches(throwable ->
                         throwable instanceof BusinessException &&
-                                ((BusinessException) throwable).getMessage().contains("HASH_DUPLICATE"))
+                                ((BusinessException) throwable).getErrorCode().equals("HASH_DUPLICATE"))
                 .verify();
 
         verify(hashTokenRepository, never()).save(any());

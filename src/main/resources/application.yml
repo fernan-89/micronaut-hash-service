@@ -74,7 +74,7 @@ endpoints:
 #  */
 # ----------------------------------------------------------------------------------------------
 mongodb:
-  uri: ${MONGODB_URI:mongodb://localhost:27017/hash_service}
+  uri: ${MONGODB_URI:`mongodb://localhost:27017/hash_service`}
   uuid-representation: STANDARD
   connection-pool:
     max-size: 100
