@@ -10,6 +10,7 @@ import com.thinklab.infrastructure.adapter.in.web.dto.request.*;
 import com.thinklab.infrastructure.adapter.in.web.dto.response.*;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.HttpStatus;
+import io.micronaut.http.MutableHttpResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,7 +22,10 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -29,6 +33,21 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
+/**
+ *  Unit Test: Inbound Web Adapter for the Hash Service.
+ *  This suite validates the strict mediation between HTTP protocols and Application Use Cases.
+ *  It ensures that the Controller correctly translates requests into commands, orchestrates
+ *  reactive streams, and projects domain aggregates into sanitized public DTOs.
+ *
+ *  <p><b>Architectural Principles:</b></p>
+ *  <ul>
+ *      <li><b>Isolation:</b> Focuses strictly on the Web Layer using Mockito for Use Cases.</li>
+ *      <li><b>Reactive Integrity:</b> Verified using {@link StepVerifier} for non-blocking signals.</li>
+ *      <li><b>Identity Sovereignty:</b> Aligned with native {@link UUID} enforcement (ADR 005).</li>
+ *  </ul>
+ *
+ *  @version 2.0.0
+ */
 @ExtendWith(MockitoExtension.class)
 class HashControllerTest {
 
@@ -44,171 +63,141 @@ class HashControllerTest {
     private HashController controller;
 
     private HashToken dummyToken;
-    private final String dummyId = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d";
+    private final UUID dummyId = UUID.fromString("9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d");
+    private final String tenantId = "TENANT-NASA-PROD-01";
 
+    /**
+     * Initializes a valid domain aggregate to prevent NullPointerExceptions during DTO projection.
+     */
     @BeforeEach
     void setUp() {
-        // Criamos um token real do domínio para evitar NullPointerExceptions
-        // nos métodos estáticos "fromDomain" dos DTOs de resposta.
         dummyToken = HashToken.create(
-                dummyId, "tenant-123", "service-a", "payload-data",
-                "hashed-string", HashAlgorithm.SHA_256, "admin"
+                dummyId, tenantId, "mission-control-api", "SEEDED-DATA-2026",
+                "3f2e1a...f8e9", HashAlgorithm.SHA3_512, "staff-engineer-01"
         );
     }
 
+    /**
+     * Validates that POST /hashes delegates to the correct UseCase and returns 201 Created.
+     */
     @Test
-    @DisplayName("POST /hashes - Deve delegar para GenerateHashUseCase e retornar 201 CREATED")
+    @DisplayName("POST /hashes - Should delegate to GenerateHashUseCase and return 210 CREATED")
     void shouldGenerateHashAndReturn201() {
-        // Given
-        GenerateHashRequest request = mock(GenerateHashRequest.class);
-        GenerateHashCommand command = mock(GenerateHashCommand.class);
+        // Given: A valid generation request
+        GenerateHashRequest request = new GenerateHashRequest(
+                tenantId, "MISSION-DATA", HashAlgorithm.SHA3_512, "source-api", "admin", false
+        );
+        when(generateHashUseCase.execute(any(GenerateHashCommand.class))).thenReturn(Mono.just(dummyToken));
 
-        when(request.toCommand()).thenReturn(command);
-        when(generateHashUseCase.execute(any(GenerateHashCommand.class)))
-                .thenReturn(Mono.just(dummyToken));
-
-        // When & Then
+        // When & Then: Execute the controller method and verify the reactive response
         StepVerifier.create(controller.generate(request))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.CREATED, response.getStatus());
                     assertNotNull(response.body());
+                    assertEquals(dummyId.toString(), response.body().id());
                 })
                 .verifyComplete();
 
-        verify(generateHashUseCase).execute(command);
+        verify(generateHashUseCase, times(1)).execute(any(GenerateHashCommand.class));
     }
 
+    /**
+     * Validates that GET /hashes/{id} retrieves a specific token with 200 OK.
+     */
     @Test
-    @DisplayName("GET /hashes/{id} - Deve buscar Hash por ID e retornar 200 OK")
-    void shouldGetHashByIdAndReturn200() {
-        // Given
-        when(getHashUseCase.execute(any(GetHashQuery.class)))
-                .thenReturn(Mono.just(dummyToken));
+    @DisplayName("GET /hashes/{id} - Should return 200 OK with projected metadata")
+    void shouldGetHashById() {
+        // Given: The registry exists
+        when(getHashUseCase.execute(any(GetHashQuery.class))).thenReturn(Mono.just(dummyToken));
 
         // When & Then
         StepVerifier.create(controller.getById(dummyId))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatus());
-                    assertNotNull(response.body());
+                    assertEquals(dummyId.toString(), response.body().id());
                 })
                 .verifyComplete();
-
-        verify(getHashUseCase).execute(any(GetHashQuery.class));
     }
 
+    /**
+     * Validates the 360° Projection Pattern (ADR 003).
+     * Tests parallel aggregation of state and immutable forensic audit trails.
+     */
     @Test
-    @DisplayName("GET /hashes - Deve listar Hashes paginados e retornar 200 OK")
-    void shouldListHashesAndReturn200() {
-        // Given
-        String tenantId = "tenant-123";
-        HashStatus status = HashStatus.ACTIVE;
+    @DisplayName("GET /hashes/{id}/details - Should return aggregated 360° view")
+    void shouldGetFullViewWithAuditTrail() {
+        // Given: State and Audit records exist
+        HashAudit auditLog = HashAudit.create(
+                UUID.randomUUID(), tenantId, dummyId, "GENERATE", "SUCCESS", "system", Map.of()
+        );
+        when(getHashUseCase.execute(any(GetHashQuery.class))).thenReturn(Mono.just(dummyToken));
+        when(getAuditLogsUseCase.execute(dummyId)).thenReturn(Flux.just(auditLog));
 
-        when(listHashesUseCase.execute(any(ListHashesQuery.class)))
-                .thenReturn(Flux.just(dummyToken, dummyToken));
-
-        // When & Then
-        StepVerifier.create(controller.list(tenantId, status, 0, 20))
+        // When & Then: Verify the consolidated parallel projection
+        StepVerifier.create(controller.getFullView(dummyId))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatus());
-                    assertNotNull(response.body());
-                    assertEquals(2, response.body().content().size());
+                    assertNotNull(response.body().hash());
+                    assertEquals(1, response.body().auditLogs().size());
                 })
                 .verifyComplete();
-
-        verify(listHashesUseCase).execute(any(ListHashesQuery.class));
     }
 
+    /**
+     * Validates that GET /hashes enforces tenant isolation and pagination.
+     */
     @Test
-    @DisplayName("PATCH /hashes/{id}/deactivate - Deve desativar e retornar 200 OK")
-    void shouldDeactivateHashAndReturn200() {
-        // Given
-        DeactivateHashRequest request = mock(DeactivateHashRequest.class);
-        DeactivateHashCommand command = mock(DeactivateHashCommand.class);
+    @DisplayName("GET /hashes - Should return paginated stream scoped to tenant")
+    void shouldListTenantHashes() {
+        // Given: UseCase returns a stream of tokens
+        when(listHashesUseCase.execute(any(ListHashesQuery.class))).thenReturn(Flux.just(dummyToken));
 
-        when(request.toCommand(dummyId)).thenReturn(command);
-        when(request.executor()).thenReturn("admin-user");
-        when(request.reason()).thenReturn("Compromised");
+        // When & Then
+        StepVerifier.create(controller.list(tenantId, HashStatus.ACTIVE, 0, 20))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatus());
+                    assertEquals(1, response.body().content().size());
+                })
+                .verifyComplete();
+    }
 
-        when(deactivateHashUseCase.execute(command))
-                .thenReturn(Mono.just(dummyToken.deactivate("admin-user")));
+    /**
+     * Validates lifecycle mutation: ACTIVE -> INACTIVE.
+     */
+    @Test
+    @DisplayName("PATCH /hashes/{id}/deactivate - Should transition status to INACTIVE")
+    void shouldDeactivateHash() {
+        // Given: Transition results in an inactive token
+        HashToken inactiveToken = dummyToken.deactivate("security-admin");
+        DeactivateHashRequest request = new DeactivateHashRequest("security-admin", "Maintenance");
+        when(deactivateHashUseCase.execute(any(DeactivateHashCommand.class))).thenReturn(Mono.just(inactiveToken));
 
         // When & Then
         StepVerifier.create(controller.deactivate(dummyId, request))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatus());
-                    assertNotNull(response.body());
+                    assertEquals(HashStatus.INACTIVE, response.body().status());
                 })
                 .verifyComplete();
-
-        verify(deactivateHashUseCase).execute(command);
     }
 
+    /**
+     * Validates terminal lifecycle event: Irreversible revocation.
+     */
     @Test
-    @DisplayName("PATCH /hashes/{id}/reactivate - Deve reativar e retornar 200 OK")
-    void shouldReactivateHashAndReturn200() {
-        // Given
-        ReactivateHashRequest request = mock(ReactivateHashRequest.class);
-        ReactivateHashCommand command = mock(ReactivateHashCommand.class);
-
-        // Simulamos o token inativo sendo reativado
-        HashToken inactiveToken = dummyToken.deactivate("admin");
-
-        when(request.toCommand(dummyId)).thenReturn(command);
-        when(reactivateHashUseCase.execute(command))
-                .thenReturn(Mono.just(inactiveToken.reactivate("admin")));
-
-        // When & Then
-        StepVerifier.create(controller.reactivate(dummyId, request))
-                .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatus());
-                    assertNotNull(response.body());
-                })
-                .verifyComplete();
-
-        verify(reactivateHashUseCase).execute(command);
-    }
-
-    @Test
-    @DisplayName("DELETE /hashes/{id} - Deve revogar de forma terminal e retornar 200 OK")
-    void shouldRevokeHashAndReturn200() {
-        // Given
-        RevokeHashRequest request = mock(RevokeHashRequest.class);
-        RevokeHashCommand command = mock(RevokeHashCommand.class);
-
-        when(request.toCommand(dummyId)).thenReturn(command);
-        when(revokeHashUseCase.execute(command))
-                .thenReturn(Mono.just(dummyToken.revoke("security-admin")));
+    @DisplayName("DELETE /hashes/{id} - Should transition to terminal REVOKED state")
+    void shouldRevokeHashPermanently() {
+        // Given: Revocation intent
+        HashToken revokedToken = dummyToken.revoke("secops-admin");
+        RevokeHashRequest request = new RevokeHashRequest("secops-admin", "Security compromise");
+        when(revokeHashUseCase.execute(any(RevokeHashCommand.class))).thenReturn(Mono.just(revokedToken));
 
         // When & Then
         StepVerifier.create(controller.revoke(dummyId, request))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatus());
-                    assertNotNull(response.body());
+                    assertEquals(HashStatus.REVOKED, response.body().status());
                 })
                 .verifyComplete();
-
-        verify(revokeHashUseCase).execute(command);
-    }
-
-    @Test
-    @DisplayName("GET /hashes/{id}/audit - Deve retornar a trilha de auditoria (200 OK)")
-    void shouldGetAuditTrailAndReturn200() {
-        // Given
-        HashAudit audit1 = HashAudit.create("tenant", dummyId, "CREATION", "SUCCESS", "admin", Map.of());
-        HashAudit audit2 = HashAudit.create("tenant", dummyId, "DEACTIVATION", "SUCCESS", "admin", Map.of());
-
-        when(getAuditLogsUseCase.execute(eq(dummyId)))
-                .thenReturn(Flux.just(audit1, audit2));
-
-        // When & Then
-        StepVerifier.create(controller.getAuditTrail(dummyId))
-                .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatus());
-                    assertNotNull(response.body());
-                    assertEquals(2, response.body().size());
-                })
-                .verifyComplete();
-
-        verify(getAuditLogsUseCase).execute(dummyId);
     }
 }

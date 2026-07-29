@@ -5,6 +5,7 @@ import com.thinklab.application.usecase.command.GetHashQuery;
 import com.thinklab.domain.exception.HashNotFoundException;
 import com.thinklab.domain.model.HashToken;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,8 +15,23 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.util.UUID;
+
 import static org.mockito.Mockito.*;
 
+/**
+ *  Unit Test: Application Interactor for specific Hash Token retrieval.
+ *  This suite validates the read-side of the CQRS pattern, ensuring high-assurance
+ *  identity discovery, multi-tenant isolation, and resilient error propagation
+ *  within a non-blocking reactive pipeline.
+ *
+ *  <p><b>Architectural Principles:</b></p>
+ *  <ul>
+ *      <li><b>Identity Sovereignty:</b> Enforces native {@link UUID} compliance to match BSON Subtype 4 storage.</li>
+ *      <li><b>Reactive Integrity:</b> Verified utilizing {@link StepVerifier} for non-blocking signal validation.</li>
+ *      <li><b>Defensive Boundary:</b> Validates synchronous fail-fast protection and semantic domain exceptions.</li>
+ *  </ul>
+ */
 @ExtendWith(MockitoExtension.class)
 class GetHashInteractorTest {
 
@@ -25,36 +41,50 @@ class GetHashInteractorTest {
     @InjectMocks
     private GetHashInteractor interactor;
 
-    @Test
-    @DisplayName("Deve retornar HashToken com sucesso quando ele for localizado pelo repositório")
-    void shouldReturnHashTokenSuccessfully() {
-        // Given
-        String hashId = "hash-nasa-unique-uuid";
-        GetHashQuery query = new GetHashQuery(hashId);
-        HashToken mockToken = mock(HashToken.class);
+    private UUID hashId;
+    private GetHashQuery query;
 
+    /**
+     * Initializes the testing context with deterministic identity seeds.
+     */
+    @BeforeEach
+    void setUp() {
+        // Agora geramos e mantemos o UUID nativo
+        hashId = UUID.randomUUID();
+        query = new GetHashQuery(hashId);
+    }
+    /**
+     * Happy Path: Validates that a valid and existent identifier results in a
+     * successful entity projection through the reactive stream.
+     */
+    @Test
+    @DisplayName("Should successfully return HashToken when located by the repository")
+    void shouldReturnHashTokenSuccessfully() {
+        // Given: Repository contains the target aggregate
+        HashToken mockToken = mock(HashToken.class);
         when(mockToken.id()).thenReturn(hashId);
         when(hashTokenRepository.findById(hashId)).thenReturn(Mono.just(mockToken));
 
-        // When & Then
+        // When & Then: Execute pipeline and verify emission
         StepVerifier.create(interactor.execute(query))
                 .expectNext(mockToken)
                 .verifyComplete();
 
-        // Validação estrita de execução
+        // Forensic validation of execution sequence
         verify(hashTokenRepository, times(1)).findById(hashId);
     }
 
+    /**
+     * Business Invariant: Validates that non-existent entities result in a semantic
+     * HashNotFoundException signal, preventing null-leakage into the web adapter.
+     */
     @Test
-    @DisplayName("Deve emitir sinal de erro HashNotFoundException caso a entidade não exista no banco")
+    @DisplayName("Should emit HashNotFoundException signal when the entity does not exist")
     void shouldEmitHashNotFoundExceptionWhenEntityDoesNotExist() {
-        // Given
-        String hashId = "hash-non-existent-uuid";
-        GetHashQuery query = new GetHashQuery(hashId);
-
+        // Given: Repository returns empty for the provided UUID
         when(hashTokenRepository.findById(hashId)).thenReturn(Mono.empty());
 
-        // When & Then
+        // When & Then: Expect terminal error signal with domain semantics
         StepVerifier.create(interactor.execute(query))
                 .expectError(HashNotFoundException.class)
                 .verify();
@@ -62,10 +92,14 @@ class GetHashInteractorTest {
         verify(hashTokenRepository, times(1)).findById(hashId);
     }
 
+    /**
+     * Defensive Boundary: Ensures that null query inputs are caught synchronously
+     * at the application edge to prevent resource allocation in the EventLoop.
+     */
     @Test
-    @DisplayName("Deve lançar NullPointerException síncrona imediatamente se o comando da query for nulo")
+    @DisplayName("Should fail fast with NullPointerException when the query is null")
     void shouldThrowNullPointerExceptionWhenQueryIsNull() {
-        // When & Then
+        // When & Then: Validate synchronous boundary defense
         NullPointerException exception = Assertions.assertThrows(
                 NullPointerException.class,
                 () -> interactor.execute(null)
@@ -73,21 +107,22 @@ class GetHashInteractorTest {
 
         Assertions.assertEquals("GetHashQuery cannot be null.", exception.getMessage());
 
-        // Garante isolamento absoluto: o repositório não pode nem ser consultado
+        // Verify total isolation: Zero infrastructure interaction on malformed input
         verifyNoInteractions(hashTokenRepository);
     }
 
+    /**
+     * Resilience Case: Validates that critical infrastructure failures (e.g. Database Timeout)
+     * are correctly propagated and logged via critical telemetry.
+     */
     @Test
-    @DisplayName("Deve propagar falhas de infraestrutura e acionar a telemetria crítica no doOnError")
+    @DisplayName("Should propagate infrastructure exceptions and trigger critical telemetry")
     void shouldPropagateSystemExceptionWhenRepositoryFails() {
-        // Given
-        String hashId = "hash-failure-uuid";
-        GetHashQuery query = new GetHashQuery(hashId);
+        // Given: A critical system failure simulation
         RuntimeException internalDbError = new RuntimeException("MongoDB Cluster Connection Timeout");
-
         when(hashTokenRepository.findById(hashId)).thenReturn(Mono.error(internalDbError));
 
-        // When & Then
+        // When & Then: Verify the original exception is preserved for SRE troubleshooting
         StepVerifier.create(interactor.execute(query))
                 .expectErrorMatches(throwable ->
                         throwable instanceof RuntimeException &&

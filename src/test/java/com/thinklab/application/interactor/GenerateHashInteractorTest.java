@@ -17,9 +17,25 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+/**
+ *  Unit Test: Application Interactor for Deterministic Hash Generation.
+ *  This suite validates the high-assurance orchestration of cryptographic token
+ *  creation, ensuring that business-level idempotency is enforced and forensic
+ *  audit trails are immutably persisted.
+ *
+ *  <p><b>Architectural Principles:</b></p>
+ *  <ul>
+ *      <li><b>Deterministic Identity:</b> Validates that generation remains idempotent based on payload/tenant.</li>
+ *      <li><b>Reactive Isolation:</b> Zero-infrastructure testing utilizing StepVerifier and Mockito.</li>
+ *      <li><b>Identity Sovereignty:</b> Enforces native UUID compliance for the resulting aggregate.</li>
+ *  </ul>
+ */
 @ExtendWith(MockitoExtension.class)
 class GenerateHashInteractorTest {
 
@@ -32,66 +48,97 @@ class GenerateHashInteractorTest {
     @InjectMocks
     private GenerateHashInteractor interactor;
 
+    private String tenantId;
     private GenerateHashCommand command;
 
+    /**
+     * Initializes the testing context.
+     * Ensures command parameters match the strict record definition order:
+     * tenantId, payload, algorithm, sourceService, executor, asSerialKey.
+     */
     @BeforeEach
     void setUp() {
-        // Os parâmetros agora respeitam a exata ordem do record GenerateHashCommand:
-        // 1. tenantId (String)
-        // 2. payload (String)
-        // 3. algorithm (HashAlgorithm)
-        // 4. sourceService (String)
-        // 5. executor (String)
-        // 6. asSerialKey (Boolean)
+        tenantId = UUID.randomUUID().toString();
         command = new GenerateHashCommand(
-                "tenant-123",
-                "test-payload",
-                HashAlgorithm.SHA_256,
-                "service-alpha",
-                "admin-user",
+                tenantId,
+                "NASA-MISSION-DATA-2026",
+                HashAlgorithm.SHA3_512,
+                "mission-control-service",
+                "staff-engineer-01",
                 false
         );
     }
 
+    /**
+     * Happy Path: Validates the atomic orchestration of hash calculation,
+     * deterministic identity derivation, and audit trail persistence.
+     */
     @Test
-    @DisplayName("Deve gerar hash com sucesso quando não existir duplicado")
+    @DisplayName("Should generate hash successfully when no active duplicate exists")
     void shouldGenerateHashSuccessfully() {
-        // Given
-        when(hashTokenRepository.existsActiveByTenantAndPayload(anyString(), anyString()))
+        // Given: The repository confirms the payload is unique for this tenant
+        when(hashTokenRepository.existsActiveByTenantAndPayload(command.tenantId(), command.payload()))
                 .thenReturn(Mono.just(false));
+
+        // Mocking the repository to return the input aggregate (simulating persistence)
         when(hashTokenRepository.save(any(HashToken.class)))
                 .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+
+        // Mocking audit persistence
         when(hashAuditRepository.save(any(HashAudit.class)))
                 .thenReturn(Mono.just(mock(HashAudit.class)));
 
-        // When & Then
+        // When & Then: Execute the reactive pipeline
         StepVerifier.create(interactor.execute(command))
                 .assertNext(token -> {
-                    assert token.tenantId().equals("tenant-123");
-                    assert token.payload().equals("test-payload");
-                    assert token.algorithm() == HashAlgorithm.SHA_256;
+                    // Resulting token must strictly match the command specification
+                    assert token.tenantId().equals(command.tenantId());
+                    assert token.payload().equals(command.payload());
+                    assert token.algorithm() == command.algorithm();
+                    // Identity sovereignty check: ID must be a valid UUID
+                    assert token.id() != null;
                 })
                 .verifyComplete();
 
+        // Forensic verification of the orchestration sequence
+        verify(hashTokenRepository).existsActiveByTenantAndPayload(anyString(), anyString());
         verify(hashTokenRepository).save(any(HashToken.class));
         verify(hashAuditRepository).save(any(HashAudit.class));
     }
 
+    /**
+     * Business Invariant Test: Ensures the system prevents the generation of duplicate
+     * active hashes, signaling a semantic conflict error before initiating I/O.
+     */
     @Test
-    @DisplayName("Deve falhar ao tentar gerar hash duplicado para mesmo tenant e payload")
+    @DisplayName("Should signal HASH_DUPLICATE error when an active hash already exists")
     void shouldFailWhenHashAlreadyExists() {
-        // Given
-        when(hashTokenRepository.existsActiveByTenantAndPayload(anyString(), anyString()))
+        // Given: Repository detects an existing active registry
+        when(hashTokenRepository.existsActiveByTenantAndPayload(command.tenantId(), command.payload()))
                 .thenReturn(Mono.just(true));
 
-        // When & Then
+        // When & Then: The pipeline must emit a terminal error signal
         StepVerifier.create(interactor.execute(command))
                 .expectErrorMatches(throwable ->
                         throwable instanceof BusinessException &&
                                 ((BusinessException) throwable).getErrorCode().equals("HASH_DUPLICATE"))
                 .verify();
 
+        // Critical: Verify that no mutation or audit happened
         verify(hashTokenRepository, never()).save(any());
         verify(hashAuditRepository, never()).save(any());
+    }
+
+    /**
+     * Boundary Defense: Ensures fail-fast behavior on null input,
+     * preventing illegal allocations in the reactive stream.
+     */
+    @Test
+    @DisplayName("Should fail fast with NullPointerException when the command is null")
+    void shouldFailFastWhenCommandIsNull() {
+        assertThrows(NullPointerException.class, () -> interactor.execute(null));
+
+        verifyNoInteractions(hashTokenRepository);
+        verifyNoInteractions(hashAuditRepository);
     }
 }

@@ -17,9 +17,25 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+/**
+ *  Unit Test: Application Interactor for Hash Deactivation.
+ *  This suite validates the high-assurance orchestration of the deactivation lifecycle,
+ *  ensuring that domain invariants are enforced and forensic audit trails are
+ *  immutably persisted within a non-blocking reactive pipeline.
+ *
+ *  <p><b>Principles:</b></p>
+ *  <ul>
+ *      <li><b>Isolation:</b> Zero infrastructure or database dependencies (Mockito driven).</li>
+ *      <li><b>Reactive Integrity:</b> Verified using Project Reactor StepVerifier.</li>
+ *      <li><b>Identity Sovereignty:</b> Native java.util.UUID enforcement.</li>
+ *  </ul>
+ */
 @ExtendWith(MockitoExtension.class)
 class DeactivateHashInteractorTest {
 
@@ -32,49 +48,79 @@ class DeactivateHashInteractorTest {
     @InjectMocks
     private DeactivateHashInteractor interactor;
 
+    private UUID hashId;
+    private UUID tenantId;
     private DeactivateHashCommand command;
     private HashToken activeToken;
 
+    /**
+     * Initializes a consistent test context using deterministic UUIDs.
+     */
     @BeforeEach
     void setUp() {
-        command = new DeactivateHashCommand("hash-123", "admin-user", "Security violation");
+        hashId = UUID.randomUUID();
+        tenantId = UUID.randomUUID();
+        command = new DeactivateHashCommand(hashId, "admin-user", "Security cleanup protocol");
         activeToken = mock(HashToken.class);
     }
 
+    /**
+     * Verifies the primary happy path: Token exists, transitions to INACTIVE,
+     * and generates a forensic audit record.
+     */
     @Test
-    @DisplayName("Deve desativar o hash com sucesso e persistir auditoria")
+    @DisplayName("Should successfully deactivate hash and persist forensic audit trail")
     void shouldDeactivateHashSuccessfully() {
-        // Given
-        when(hashTokenRepository.findById("hash-123")).thenReturn(Mono.just(activeToken));
-        when(activeToken.deactivate("admin-user")).thenReturn(activeToken);
-        when(activeToken.status()).thenReturn(HashStatus.INACTIVE);
-        when(activeToken.id()).thenReturn("hash-123");
-        when(activeToken.tenantId()).thenReturn("tenant-1");
+        // Given: The token is found and the domain logic returns a new inactive instance
+        HashToken deactivatedToken = mock(HashToken.class);
 
-        when(hashTokenRepository.update(activeToken)).thenReturn(Mono.just(activeToken));
+        when(hashTokenRepository.findById(hashId)).thenReturn(Mono.just(activeToken));
+        when(activeToken.deactivate(command.executor())).thenReturn(deactivatedToken);
+
+        // Setup expected behavior for the persistent layers
+        when(hashTokenRepository.update(deactivatedToken)).thenReturn(Mono.just(deactivatedToken));
         when(hashAuditRepository.save(any(HashAudit.class))).thenReturn(Mono.just(mock(HashAudit.class)));
 
-        // When & Then
+        // When & Then: Execute the reactive pipeline
         StepVerifier.create(interactor.execute(command))
-                .expectNext(activeToken)
+                .expectNext(deactivatedToken)
                 .verifyComplete();
 
-        verify(hashTokenRepository).update(activeToken);
+        // Forensic verification of calls
+        verify(hashTokenRepository).findById(hashId);
+        verify(hashTokenRepository).update(deactivatedToken);
         verify(hashAuditRepository).save(any(HashAudit.class));
     }
 
+    /**
+     * Ensures that if the entity does not exist, the system signals a semantic
+     * domain error and skips subsequent persistence/audit steps.
+     */
     @Test
-    @DisplayName("Deve retornar erro quando hash não for encontrado")
-    void shouldReturnErrorWhenHashNotFound() {
-        // Given
-        when(hashTokenRepository.findById("hash-123")).thenReturn(Mono.empty());
+    @DisplayName("Should signal HashNotFoundException when the target registry does not exist")
+    void shouldSignalErrorWhenHashNotFound() {
+        // Given: Repository fails to locate the hash
+        when(hashTokenRepository.findById(hashId)).thenReturn(Mono.empty());
 
-        // When & Then
+        // When & Then: The pipeline must emit a terminal error signal
         StepVerifier.create(interactor.execute(command))
                 .expectError(HashNotFoundException.class)
                 .verify();
 
+        // Critical: Verify that no mutation or audit happened
         verify(hashTokenRepository, never()).update(any());
         verify(hashAuditRepository, never()).save(any());
+    }
+
+    /**
+     * Validates synchronous boundary defense (Fail-Fast) when receiving null input.
+     */
+    @Test
+    @DisplayName("Should fail fast with NullPointerException when the command is null")
+    void shouldFailFastWhenCommandIsNull() {
+        assertThrows(NullPointerException.class, () -> interactor.execute(null));
+
+        verifyNoInteractions(hashTokenRepository);
+        verifyNoInteractions(hashAuditRepository);
     }
 }

@@ -302,4 +302,22 @@ public class HashController {
                 .doOnSuccess(res -> log.info("[ACTION: GET_AUDIT] [ID: {}] - Forensic trail successfully extracted. Total historical events projected: {}", id, res.body() != null ? res.body().size() : 0))
                 .doOnError(err -> log.error("[ACTION: GET_AUDIT] [ID: {}] - Forensic trail extraction failed: {}", id, err.getMessage()));
     }
+    /**
+     * Retrieves a consolidated 360-degree view (State + Chronological Audit Trail).
+     * Implementation of ADR 003: Parallel projection for high-assurance discovery.
+     */
+    @Get("/{id}/details")
+    @Operation(summary = "Get aggregated hash details", description = "Consolidates current state with its full forensic trail.")
+    public Mono<MutableHttpResponse<HashFullResponse>> getFullView(@PathVariable UUID id) {
+        return Mono.zip(
+                        getHashUseCase.execute(new GetHashQuery(id)),
+                        getAuditLogsUseCase.execute(id).collectList()
+                )
+                .map(tuple -> new HashFullResponse(
+                        HashResponse.fromDomain(tuple.getT1()),
+                        tuple.getT2().stream().map(HashAuditResponse::fromDomain).toList()
+                ))
+                .map(HttpResponse::ok)
+                .doOnSubscribe(s -> log.info("[ACTION: GET_FULL_VIEW] [ID: {}] - Initiating 360-degree projection.", id));
+    }
 }
