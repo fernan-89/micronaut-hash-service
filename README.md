@@ -58,7 +58,3 @@ Test suite includes Unit Tests (Mockito) and Integration Tests (Testcontainers).
 ### E2E Testing (Postman)
 
 A complete Postman collection is available covering the full lifecycle. It includes automated test scripts (`pm.test`) to validate structural integrity and business rules.
-
-```
-
-```
