@@ -64,10 +64,10 @@ COPY --from=builder /home/gradle/src/build/libs/*-all.jar app.jar
 # ----------------------------------------------------------------------------------------------
 ENV JAVA_OPTS="-Xmx256m -XX:+UseContainerSupport"
 ENV MONGODB_URI="mongodb://localhost:27017/default_db_local"
-ENV PORT=8080
+ENV MICRONAUT_SERVER_PORT=8080
 
 # Expose the standard HTTP port for the service mesh/ingress
-EXPOSE ${PORT}
+EXPOSE ${MICRONAUT_SERVER_PORT}
 
 # ----------------------------------------------------------------------------------------------
 # /**

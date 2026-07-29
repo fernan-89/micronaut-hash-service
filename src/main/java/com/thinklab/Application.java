@@ -8,6 +8,8 @@ import io.swagger.v3.oas.annotations.info.License;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import java.security.Security;
 import java.util.TimeZone;
 
 // ==============================================================================================
@@ -65,7 +67,10 @@ public class Application {
                 log.error("[JVM_FATAL] - Unhandled exception in thread [{}]: {}", thread.getName(), throwable.getMessage(), throwable)
         );
 
-        // 3. Boot: Use the Builder for explicit control over startup arguments
+        // 3. Mission Critical: Inject Bouncy Castle to satisfy native JVM BLAKE3 dependencies
+        Security.addProvider(new BouncyCastleProvider());
+
+        // 4. Boot: Use the Builder for explicit control over startup arguments
         try {
             Micronaut.build(args)
                     .mainClass(Application.class)
