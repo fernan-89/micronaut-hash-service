@@ -9,64 +9,107 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+import java.util.Objects;
+
 /**
  * Infrastructure DTO: Web request payload for the generation of a cryptographic {@link com.thinklab.domain.model.HashToken}.
- * <p>This DTO acts as the formal interface definition for the HTTP generation endpoint.
- * It enforces input validation at the edge, preventing malformed requests and resource
- * exhaustion (DoS mitigation) before entering the Application layer.</p>
  *
- * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
+ * <p><b>Architectural Role:</b>
+ * This Data Transfer Object (DTO) acts as the formal, strongly-typed interface definition for the HTTP
+ * generation endpoint. It serves as an Anti-Corruption Layer (ACL) at the outermost edge of the system.
+ *
+ * <p><b>Contractual Obligations:</b>
  * <ul>
- * <li><b>Protocol Translation:</b> Decouples external API contracts from internal Application Command structures.</li>
- * <li><b>Edge Validation:</b> Enforces schema compliance and business constraints (e.g., payload size limits) before processing.</li>
- * <li><b>Observability-Ready:</b> Captures mandatory context (tenant, source, executor) required for forensic auditability.</li>
+ * <li><b>Protocol Translation:</b> Decouples external API consumers from the internal, immutable
+ *     Application Command structures. Changes in HTTP contracts do not bleed into the Domain.</li>
+ * <li><b>Resource Exhaustion Mitigation (DoS Protection):</b> Enforces strict schema compliance and
+ *     upper boundaries on payload sizes (max 10,000 characters) synchronously at the Netty HTTP edge,
+ *     dropping malicious payloads before they consume business-layer memory or CPU cycles.</li>
+ * <li><b>Forensic Completeness:</b> Captures and mandates strict multi-tenant context, source attribution,
+ *     and executor identity required for immutable auditability.</li>
  * </ul>
  *
- * @param tenantId      The unique identifier of the tenant requesting the generation.
- * @param payload       The raw data to be hashed.
- * @param algorithm     The cryptographic algorithm chosen for this operation.
- * @param sourceService The name of the microservice or system invoking this action.
- * @param executor      The principal identifier of the user or system authorizing this action.
- * @param asSerialKey   Flag indicating if the output should be formatted as a serial key.
+ * @param tenantId      The strictly validated identifier of the isolated tenant requesting the generation.
+ * @param payload       The raw, bounded string data to be cryptographically processed.
+ * @param algorithm     The specific cryptographic algorithm chosen for this operation.
+ * @param sourceService The identifier of the external microservice or system invoking this action.
+ * @param executor      The verified principal identifier of the user or system authorizing this action.
+ * @param asSerialKey   Flag indicating if the cryptographic output should be structurally formatted as a serial key.
+ *
+ * @author ThinkLab
+ * @since 1.0
  */
 @Serdeable
 @Introspected
 @Schema(
         name = "GenerateHashRequest",
-        description = "Payload required to initiate a new cryptographic token generation process."
+        description = "Mandatory payload required to initiate a new cryptographic token generation process."
 )
 public record GenerateHashRequest(
-        @NotBlank(message = "Tenant ID is mandatory")
-        @Schema(description = "Isolated tenant identifier", example = "THINKLAB-PROD-01")
+
+        @NotBlank(message = "Tenant ID is universally mandatory for data isolation.")
+        @Schema(description = "Isolated tenant identifier.", example = "THINKLAB-PROD-01")
         String tenantId,
 
-        @NotBlank(message = "Payload is mandatory")
-        @Size(max = 10000, message = "Payload exceeds security limits (10k chars)")
-        @Schema(description = "Raw content to be hashed", example = "raw-transaction-data-v1")
+        @NotBlank(message = "Cryptographic payload cannot be blank.")
+        @Size(max = 10000, message = "Payload exceeds the absolute security limit of 10,000 characters.")
+        @Schema(description = "Raw content to be hashed. Capped at 10,000 characters to prevent DoS.", example = "raw-transaction-data-v1")
         String payload,
 
-        @NotNull(message = "Cryptographic algorithm is mandatory")
-        @Schema(description = "The algorithm to be used for calculation", example = "SHA_256")
+        @NotNull(message = "A cryptographic algorithm strategy must be explicitly specified.")
+        @Schema(description = "The cryptographic algorithm strategy to be utilized.", example = "SHA3_512")
         HashAlgorithm algorithm,
 
-        @NotBlank(message = "Source service identifier is mandatory")
-        @Schema(description = "ID of the system requesting the hash", example = "order-management-service")
+        @NotBlank(message = "Source service identifier is mandatory for distributed tracing.")
+        @Schema(description = "Identification of the upstream system requesting the hash.", example = "order-management-service")
         String sourceService,
 
-        @NotBlank(message = "Executor identification is mandatory for auditing")
-        @Schema(description = "Identification of the agent executing the action", example = "admin-user-01")
+        @NotBlank(message = "Executor identification is mandatory for forensic auditing.")
+        @Schema(description = "Identification of the agent or process executing the action.", example = "admin-user-01")
         String executor,
 
-        @Schema(description = "If true, formats the output as a serial key", defaultValue = "false")
+        @Schema(description = "If true, mathematically formats the final output into a segmented serial key.", defaultValue = "false")
         boolean asSerialKey
 ) {
 
     /**
-     * Maps the web request DTO to the domain-compliant application command.
-     * This method acts as the translation layer between the Transport Protocol (HTTP)
-     * and the Application Use Case boundary.
+     * Compact constructor to enforce programmatic fail-fast validation.
      *
-     * @return A validated and sanitized {@link GenerateHashCommand}.
+     * <p><b>Contract:</b> While Jakarta Validation (JSR-380) secures the HTTP edge, this constructor
+     * acts as a secondary defense-in-depth layer. It guarantees that even if this DTO is instantiated
+     * programmatically (e.g., via message brokers or unit tests), it is impossible to create an invalid state.
+     *
+     * @throws NullPointerException if any mandatory parameter is null.
+     * @throws IllegalArgumentException if any mandatory string parameter is blank.
+     */
+    public GenerateHashRequest {
+        Objects.requireNonNull(tenantId, "Edge Invariant Violation: Tenant ID cannot be null.");
+        Objects.requireNonNull(payload, "Edge Invariant Violation: Payload cannot be null.");
+        Objects.requireNonNull(algorithm, "Edge Invariant Violation: Cryptographic algorithm cannot be null.");
+        Objects.requireNonNull(sourceService, "Edge Invariant Violation: Source service cannot be null.");
+        Objects.requireNonNull(executor, "Edge Invariant Violation: Executor cannot be null.");
+
+        if (tenantId.isBlank()) {
+            throw new IllegalArgumentException("Edge Invariant Violation: Tenant ID cannot be blank.");
+        }
+        if (payload.isBlank()) {
+            throw new IllegalArgumentException("Edge Invariant Violation: Payload cannot be blank.");
+        }
+        if (sourceService.isBlank()) {
+            throw new IllegalArgumentException("Edge Invariant Violation: Source service cannot be blank.");
+        }
+        if (executor.isBlank()) {
+            throw new IllegalArgumentException("Edge Invariant Violation: Executor cannot be blank.");
+        }
+    }
+
+    /**
+     * Translates the strictly validated web request payload into a domain-compliant Application Command.
+     *
+     * <p><b>Contract:</b> This method acts as the secure translation bridge between the Volatile Transport
+     * Protocol (HTTP) and the Immutable Application Use Case boundary.
+     *
+     * @return A pristine, strictly validated {@link GenerateHashCommand} ready for asynchronous processing.
      */
     public GenerateHashCommand toCommand() {
         return new GenerateHashCommand(

@@ -7,49 +7,64 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+import java.util.Objects;
+import java.util.UUID;
+
 /**
- * Infrastructure DTO: Web request payload for the deactivation of a {@link com.thinklab.domain.model.HashToken}.
- * <p>This DTO acts as the formal interface definition for the HTTP deactivation endpoint.
- * It enforces input validation at the edge, ensuring that only syntactically correct
- * forensic metadata enters the Application layer.</p>
+ * Infrastructure DTO: Web request payload for the temporary suspension of a {@link com.thinklab.domain.model.HashToken}.
  *
- * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
+ * <p><b>Architectural Role:</b>
+ * This Data Transfer Object (DTO) serves as the strict edge-defense mechanism for the HTTP deactivation endpoint.
+ * It intercepts raw incoming JSON payloads, applying rigorous JSR-380 validation to guarantee that only
+ * syntactically pristine forensic metadata penetrates the Application boundary.
+ *
+ * <p><b>Contractual Obligations:</b>
  * <ul>
- * <li><b>Protocol Translation:</b> Decouples external API contracts from internal Application Command structures.</li>
- * <li><b>Edge Validation:</b> Enforces schema compliance and business constraints before processing.</li>
- * <li><b>Observability-Ready:</b> Carries mandatory audit metadata (executor/reason) required for compliance reporting.</li>
+ * <li><b>Protocol Translation:</b> Acts as an anti-corruption layer, decoupling the volatile external HTTP
+ *     contracts from the immutable Application Command structures.</li>
+ * <li><b>Edge Validation (Fail-Fast):</b> Enforces string boundaries and non-blank constraints synchronously,
+ *     yielding a 400 Bad Request before utilizing any Netty EventLoop cycles for business processing.</li>
+ * <li><b>Forensic Completeness:</b> Mandates the collection of audit metadata (executor identity and business justification)
+ *     required to fulfill compliance and observability mandates.</li>
  * </ul>
  *
- * @param executor The principal identifier of the user or system authorizing this action.
- * @param reason   The business justification provided for the deactivation.
+ * @param executor The validated principal identifier of the user, service account, or system authorizing this action.
+ * @param reason   The comprehensive business justification provided for suspending the cryptographic token.
+ *
+ * @author ThinkLab
+ * @since 1.0
  */
 @Serdeable
 @Introspected
 @Schema(
         name = "DeactivateHashRequest",
-        description = "Payload required to suspend the operational status of a cryptographic token."
+        description = "Mandatory forensic payload required to suspend the operational status of a cryptographic token."
 )
 public record DeactivateHashRequest(
-        @NotBlank(message = "Executor identification is mandatory")
-        @Size(max = 100, message = "Executor identification is too long")
-        @Schema(description = "Identification of the agent executing the action", example = "security-officer-42")
+
+        @NotBlank(message = "Executor identification is universally mandatory for audit compliance.")
+        @Size(max = 100, message = "Executor identification exceeds the maximum permitted length of 100 characters.")
+        @Schema(description = "Verified identification of the agent executing the action.", example = "security-officer-42")
         String executor,
 
-        @NotBlank(message = "A business reason for deactivation must be provided")
-        @Size(min = 5, max = 500, message = "Reason must be between 5 and 500 characters")
-        @Schema(description = "Business justification for the deactivation", example = "Reported compromise of the payload origin")
+        @NotBlank(message = "A business reason for deactivation is mandatory for forensic traceability.")
+        @Size(min = 5, max = 500, message = "The deactivation justification must be between 5 and 500 characters.")
+        @Schema(description = "Detailed business justification for the token suspension.", example = "Reported compromise of the payload origin system.")
         String reason
 ) {
 
     /**
-     * Maps the web request DTO to the domain-compliant application command.
-     * This method acts as the translation layer between the Transport Protocol (HTTP)
-     * and the Application Use Case boundary.
+     * Translates the web request payload into a domain-compliant Application Command.
      *
-     * @param hashId The unique identifier of the hash extracted from the HTTP Path.
-     * @return A validated and sanitized {@link DeactivateHashCommand}.
+     * <p><b>Contract:</b> This method bridges the HTTP Transport Protocol and the Application Use Case boundary.
+     * It defensively guarantees the injection of a valid structural identifier.
+     *
+     * @param hashId The universally unique identifier (UUID) of the target hash, extracted securely from the HTTP Path.
+     * @return A pristine, immutable {@link DeactivateHashCommand} ready for Use Case execution.
+     * @throws NullPointerException if the injected {@code hashId} is null.
      */
-    public DeactivateHashCommand toCommand(String hashId) {
+    public DeactivateHashCommand toCommand(UUID hashId) {
+        Objects.requireNonNull(hashId, "Infrastructure constraint violated: Target Hash UUID must not be null during command translation.");
         return new DeactivateHashCommand(hashId, this.executor, this.reason);
     }
 }

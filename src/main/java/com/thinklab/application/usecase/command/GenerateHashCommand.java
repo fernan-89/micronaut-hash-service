@@ -12,24 +12,32 @@ import java.util.Objects;
 
 /**
  * Application Command: Encapsulates the intent to generate a new cryptographic {@link com.thinklab.domain.model.HashToken}.
- * <p>This immutable command object serves as the formal request structure for generation workflows.
- * It enforces strict input validation, prevents memory exhaustion (DoS mitigation),
- * and ensures that all generation requests carry the required metadata for auditability.</p>
  *
- * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
+ * <p><b>Architectural Role:</b>
+ * This immutable command record serves as the formal request payload for token generation workflows.
+ * It enforces strict declarative constraints via Jakarta Bean Validation and defensive runtime sanitization
+ * to guarantee data integrity and prevent resource exhaustion (DoS mitigation) before entering the application core.
+ *
+ * <p><b>Contractual Obligations:</b>
  * <ul>
- * <li><b>Immutability:</b> Implemented as a Java record to ensure thread-safe, consistent state propagation.</li>
- * <li><b>OOM Prevention:</b> Enforces strict payload sizing to ensure system stability under load.</li>
- * <li><b>Edge Validation:</b> Combines Jakarta Bean Validation with defensive programming to catch malformed requests at the boundary.</li>
- * <li><b>Forensic Integrity:</b> Requires mandatory service and executor identification to ensure accountability.</li>
+ * <li><b>Immutability:</b> Implemented as a Java record to guarantee thread-safe propagation across reactive streams.</li>
+ * <li><b>OOM Prevention:</b> Enforces strict payload sizing limitations to ensure system stability under heavy load.</li>
+ * <li><b>Forensic Accountability:</b> Mandates tenant context, source service telemetry, executor identity,
+ *     and algorithm specifications to satisfy compliance requirements.</li>
+ * <li><b>Defensive Sanitization:</b> Compact constructor trims string fields and executes fail-fast validation checks
+ *     with structured logging hooks.</li>
  * </ul>
  *
- * @param tenantId      The unique identifier of the tenant requesting the generation.
- * @param payload       The raw data to be hashed (Limited for security and performance).
- * @param algorithm     The cryptographic algorithm chosen for this operation.
- * @param sourceService The name of the microservice or system invoking this action.
- * @param executor      The user or system account executing the action.
- * @param asSerialKey   Flag indicating if the output should be formatted as a serial key.
+ * @param tenantId      The unique identifier of the tenant requesting the generation. Must not be blank.
+ * @param payload       The raw data to be hashed (strictly limited to 10,000 characters). Must not be blank.
+ * @param algorithm     The cryptographic algorithm chosen for this operation. Must not be null.
+ * @param sourceService The name of the microservice or system invoking this action. Must not be blank.
+ * @param executor      The user or system account executing the action. Must not be blank.
+ * @param asSerialKey   Flag indicating if the output hash should be formatted as a serial key. Must not be null.
+ *
+ * @author ThinkLab
+ * @version 1.0.0
+ * @since 1.0
  */
 @Slf4j
 @Introspected
@@ -53,33 +61,32 @@ public record GenerateHashCommand(
         @Size(max = 100, message = "Executor identification is too long")
         String executor,
 
-        @NotNull
+        @NotNull(message = "asSerialKey flag is mandatory")
         Boolean asSerialKey
 ) {
 
     /**
-     * Compact constructor for defensive programming, input sanitization, and forensic logging.
-     * Acts as the final gatekeeper for data integrity, ensuring that transient inputs are
-     * sanitized and invalid attempts are logged for security analysis.
+     * Compact constructor for defensive programming, input sanitization, and structured forensic logging.
+     * Acts as the final gatekeeper for data integrity, ensuring inputs are normalized and invalid states
+     * are intercepted immediately.
      */
     public GenerateHashCommand {
-        Objects.requireNonNull(tenantId, "tenantId cannot be null");
-        Objects.requireNonNull(payload, "payload cannot be null");
-        Objects.requireNonNull(algorithm, "algorithm cannot be null");
-        Objects.requireNonNull(sourceService, "sourceService cannot be null");
-        Objects.requireNonNull(executor, "executor cannot be null");
-        Objects.requireNonNull(asSerialKey, "asSerialKey cannot be null");
+        Objects.requireNonNull(tenantId, "Application constraint violated: tenantId cannot be null.");
+        Objects.requireNonNull(payload, "Application constraint violated: payload cannot be null.");
+        Objects.requireNonNull(algorithm, "Application constraint violated: algorithm cannot be null.");
+        Objects.requireNonNull(sourceService, "Application constraint violated: sourceService cannot be null.");
+        Objects.requireNonNull(executor, "Application constraint violated: executor cannot be null.");
+        Objects.requireNonNull(asSerialKey, "Application constraint violated: asSerialKey cannot be null.");
 
-        // Sanitization: Normalize whitespace to prevent data contamination
+        // Normalization: Trim whitespace on string fields (preserving raw payload integrity)
         tenantId = tenantId.trim();
-        payload = payload.trim();
         sourceService = sourceService.trim();
         executor = executor.trim();
 
-        // Defense-in-depth: Validation check for non-web instantiation contexts
+        // Defense-in-depth: Programmatic validation check for non-web or direct instantiation contexts
         if (tenantId.isBlank() || payload.isBlank() || sourceService.isBlank() || executor.isBlank()) {
-            log.error("[ACTION: GENERATE_HASH_VALIDATION] - CRITICAL: Pipeline aborted due to malformed command input. [TENANT: {}] [SERVICE: {}] [EXECUTOR: {}]", tenantId, sourceService, executor);
-            throw new IllegalArgumentException("Invalid command state: tenantId, payload, sourceService, and executor must not be blank.");
+            log.error("[ACTION: GENERATE_HASH_VALIDATION] [TENANT: {}] [SERVICE: {}] [EXECUTOR: {}] - CRITICAL: Pipeline aborted due to malformed command input.", tenantId, sourceService, executor);
+            throw new IllegalArgumentException("Application constraint violated: tenantId, payload, sourceService, and executor must not be blank.");
         }
     }
 }

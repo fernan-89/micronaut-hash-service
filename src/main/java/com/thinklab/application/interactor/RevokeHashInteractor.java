@@ -7,66 +7,98 @@ import com.thinklab.domain.exception.HashNotFoundException;
 import com.thinklab.domain.model.HashAudit;
 import com.thinklab.domain.model.HashToken;
 import com.thinklab.application.port.in.RevokeHashUseCase;
-import jakarta.annotation.Nonnull;
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Application Interactor: Implementation of the {@link RevokeHashUseCase} input port.
- * <p>This service orchestrates the permanent and irreversible revocation of a HashToken.
- * Following the Zero Trust principle, revocation requires an explicit business
- * justification and mandatory auditing for security compliance.</p>
  *
- * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
+ * <p><b>Architectural Role:</b>
+ * This interactor orchestrates the permanent and irreversible revocation of a cryptographic hash token.
+ * Following Zero Trust and secure forensic principles, terminal revocation mandates an explicit business
+ * justification and transactional auditing for strict security compliance.
+ *
+ * <p><b>Contractual Obligations:</b>
  * <ul>
- * <li><b>Non-blocking:</b> Fully integrated into the Project Reactor pipeline.</li>
- * <li><b>Irreversible:</b> Transitions the aggregate to a terminal REVOKED state.</li>
- * <li><b>Audit-Mandatory:</b> Every revocation event transactionally triggers a forensic audit record.</li>
- * <li><b>Telemetry:</b> Structured logging tags track the lifecycle of the orchestration pipeline.</li>
+ * <li><b>Constructor Injection (ADR-001):</b> Utilizes an explicit {@link Inject} constructor to guarantee
+ *     deterministic bean wiring and AOP proxy reliability.</li>
+ * <li><b>Identity Sovereignty:</b> Enforces native {@link UUID} parameters to maintain strict
+ *     BSON Binary (Subtype 4) performance optimization across database boundaries.</li>
+ * <li><b>Terminal State Transition:</b> Drives the domain aggregate into a permanent, immutable REVOKED status.</li>
+ * <li><b>Atomic Audit Binding:</b> Every successful termination transactionalizes the generation and
+ *     persistence of an immutable {@link HashAudit} forensic event correlated by a unique transaction UUID.</li>
  * </ul>
  *
+ * @author ThinkLab
  * @version 1.0.0
+ * @since 1.0
  */
 @Slf4j
 @Singleton
-@RequiredArgsConstructor
 public class RevokeHashInteractor implements RevokeHashUseCase {
 
     private final HashTokenRepositoryPort hashTokenRepository;
     private final HashAuditRepositoryPort hashAuditRepository;
 
     /**
-     * Orchestrates the irreversible revocation of a HashToken and ensures the generation of an immutable audit trail.
+     * Explicit constructor for strict dependency injection (ADR-001).
      *
-     * @param command The {@link RevokeHashCommand} encapsulating the target identifier, executor, and justification.
+     * @param hashTokenRepository The outbound port for token persistence. Must not be null.
+     * @param hashAuditRepository The outbound port for audit persistence. Must not be null.
+     * @throws NullPointerException if any repository dependency is null.
+     */
+    @Inject
+    public RevokeHashInteractor(
+            HashTokenRepositoryPort hashTokenRepository,
+            HashAuditRepositoryPort hashAuditRepository
+    ) {
+        this.hashTokenRepository = Objects.requireNonNull(hashTokenRepository, "Application constraint violated: HashTokenRepositoryPort cannot be null.");
+        this.hashAuditRepository = Objects.requireNonNull(hashAuditRepository, "Application constraint violated: HashAuditRepositoryPort cannot be null.");
+    }
+
+    /**
+     * Orchestrates the irreversible revocation of a {@link HashToken} and ensures the transactional generation
+     * of an immutable forensic audit trail.
+     *
+     * <p><b>Reactive Pipeline Flow:</b>
+     * <ol>
+     *   <li>Fetches the token by its UUID (Emits {@link HashNotFoundException} via {@code switchIfEmpty} if absent).</li>
+     *   <li>Applies the pure domain termination via {@code revoke(executor)}, enforcing terminal state invariants.</li>
+     *   <li>Persists the updated aggregate via the repository port.</li>
+     *   <li>Generates and persists the forensic audit log correlated by a reactive transaction UUID.</li>
+     * </ol>
+     *
+     * @param command The {@link RevokeHashCommand} encapsulating the target UUID, executor, and justification. Must not be null.
      * @return A {@link Mono} emitting the mutated {@link HashToken} in its terminal REVOKED state.
-     * @throws NullPointerException if the provided command is null, preserving pipeline integrity (Fail-Fast).
-     * @apiNote Emits a {@link HashNotFoundException} signal through the reactive stream if the target entity does not exist.
+     * @throws NullPointerException if the provided command is null.
      */
     @Override
-    @Nonnull
-    public Mono<HashToken> execute(@Nonnull RevokeHashCommand command) {
-        Objects.requireNonNull(command, "RevokeHashCommand cannot be null.");
+    public Mono<HashToken> execute(RevokeHashCommand command) {
+        Objects.requireNonNull(command, "Application constraint violated: RevokeHashCommand cannot be null.");
 
-        return hashTokenRepository.findById(command.hashId())
+        UUID hashId = command.hashId();
+        UUID txId = UUID.randomUUID(); // Reactive transaction correlation ID for auditing
+
+        return hashTokenRepository.findById(hashId)
                 .switchIfEmpty(Mono.defer(() -> {
-                    log.warn("[ACTION: REVOKE_HASH] [ID: {}] - Orchestration halted: Entity not found.", command.hashId());
-                    return Mono.error(new HashNotFoundException(command.hashId()));
+                    log.warn("[ACTION: REVOKE_HASH] [ID: {}] [TX: {}] - Orchestration halted: Entity not found in system of record.", hashId, txId);
+                    return Mono.error(new HashNotFoundException(hashId));
                 }))
                 .map(existingToken -> existingToken.revoke(command.executor()))
                 .flatMap(hashTokenRepository::update)
-                .flatMap(revokedToken -> createAuditLog(revokedToken, command.executor(), command.reason())
+                .flatMap(revokedToken -> createAuditLog(revokedToken, txId, command.executor(), command.reason())
                         .thenReturn(revokedToken))
-                .doOnSubscribe(s -> log.warn("[ACTION: REVOKE_HASH] [ID: {}] [EXECUTOR: {}] - CRITICAL: Initiating orchestration pipeline for permanent entity revocation.", command.hashId(), command.executor()))
-                .doOnSuccess(token -> log.warn("[ACTION: REVOKE_HASH] [ID: {}] - CRITICAL: Orchestration completed. Entity permanently revoked and forensic audit successfully persisted.", token.id()))
+                .doOnSubscribe(s -> log.warn("[ACTION: REVOKE_HASH] [ID: {}] [TX: {}] [EXECUTOR: {}] - CRITICAL: Initiating orchestration pipeline for permanent entity revocation.", hashId, txId, command.executor()))
+                .doOnSuccess(token -> log.warn("[ACTION: REVOKE_HASH] [ID: {}] [TX: {}] - CRITICAL: Orchestration successfully completed. Entity permanently revoked and forensic audit committed.", hashId, txId))
                 .doOnError(error -> {
                     if (!(error instanceof HashNotFoundException)) {
-                        log.error("[ACTION: REVOKE_HASH] [ID: {}] - CRITICAL: Pipeline orchestration failed due to system exception: {}", command.hashId(), error.getMessage());
+                        log.error("[ACTION: REVOKE_HASH] [ID: {}] [TX: {}] - CRITICAL: Pipeline orchestration failed due to system exception: {}", hashId, txId, error.getMessage(), error);
                     }
                 });
     }
@@ -75,12 +107,14 @@ public class RevokeHashInteractor implements RevokeHashUseCase {
      * Constructs and persists an immutable forensic audit record for the terminal revocation lifecycle event.
      *
      * @param token    The newly revoked {@link HashToken} entity.
+     * @param txId     The reactive transaction correlation UUID.
      * @param executor The principal identifier of the user or system executing the action.
      * @param reason   The business justification provided for the permanent revocation.
-     * @return A {@link Mono} emitting the persisted {@link HashAudit} record.
+     * @return A {@link Mono} emitting the successfully persisted {@link HashAudit} record.
      */
-    private Mono<HashAudit> createAuditLog(HashToken token, String executor, String reason) {
-        return hashAuditRepository.save(HashAudit.create(
+    private Mono<HashAudit> createAuditLog(HashToken token, UUID txId, String executor, String reason) {
+        HashAudit audit = HashAudit.create(
+                txId,
                 token.tenantId(),
                 token.id(),
                 "HASH_REVOCATION",
@@ -88,10 +122,12 @@ public class RevokeHashInteractor implements RevokeHashUseCase {
                 executor,
                 Map.of(
                         "reason", reason,
-                        "tokenId", token.id(),
+                        "tokenId", token.id().toString(),
                         "terminalAction", "TRUE",
                         "finalStatus", token.status().name()
                 )
-        ));
+        );
+
+        return hashAuditRepository.save(audit);
     }
 }

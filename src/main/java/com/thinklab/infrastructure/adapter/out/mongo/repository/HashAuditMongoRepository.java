@@ -1,7 +1,6 @@
 package com.thinklab.infrastructure.adapter.out.mongo.repository;
 
 import com.thinklab.infrastructure.adapter.out.mongo.entity.HashAuditEntity;
-import jakarta.annotation.Nonnull;
 import io.micronaut.data.mongodb.annotation.MongoRepository;
 import io.micronaut.data.repository.reactive.ReactorCrudRepository;
 import reactor.core.publisher.Flux;
@@ -10,51 +9,57 @@ import java.util.UUID;
 
 /**
  * Infrastructure Adapter: Reactive repository for {@link HashAuditEntity} persistence.
- * <p>This interface defines the infrastructure-level contract for the storage of immutable
- * forensic audit records. It implements the {@link com.thinklab.application.port.out.HashAuditRepositoryPort}
- * using MongoDB, leveraging Micronaut Data's AOT (Ahead-of-Time) compilation to ensure
- * non-blocking, high-performance database interactions.</p>
  *
- * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
+ * <p><b>Architectural Role:</b>
+ * This interface defines the low-level infrastructure contract for storing immutable forensic audit
+ * records within MongoDB. It implements the persistence adapter pattern, leveraging Micronaut Data's
+ * Ahead-of-Time (AOT) compilation to generate reflection-free, highly optimized non-blocking query routines.
+ *
+ * <p><b>Contractual Obligations:</b>
  * <ul>
- * <li><b>Non-blocking:</b> Inherits from {@link ReactorCrudRepository} for native, high-throughput reactive MongoDB operations.</li>
- * <li><b>Forensic Integrity:</b> Designed for append-only operations; business logic restricts updates or deletions of audit trails.</li>
- * <li><b>AOT Optimized:</b> Query implementations are resolved at compile-time to eliminate reflection overhead.</li>
- * <li><b>Data Segregation:</b> Optimized indices facilitate tenant-scoped queries to ensure compliance and privacy.</li>
+ * <li><b>Non-Blocking I/O:</b> Extends {@link ReactorCrudRepository} to natively support Project Reactor
+ *     streams ({@link Flux}), guaranteeing that Netty EventLoops are never stalled by disk I/O.</li>
+ * <li><b>Identity Sovereignty:</b> Enforces {@link UUID} across primary keys, entity references, and
+ *     transaction correlation parameters for seamless BSON Binary (Subtype 4) indexing and matching.</li>
+ * <li><b>Append-Only Forensic Integrity:</b> Designed strictly for write and read operations. The domain
+ *     layer explicitly prohibits updates or deletions of forensic audit histories.</li>
  * </ul>
  *
+ * @author ThinkLab
  * @version 1.0.0
+ * @since 1.0
  */
 @MongoRepository
-public interface HashAuditMongoRepository extends ReactorCrudRepository<HashAuditEntity, String> {
+public interface HashAuditMongoRepository extends ReactorCrudRepository<HashAuditEntity, UUID> {
 
     /**
-     * Retrieves a reactive stream of audit logs correlated to a specific transaction identifier.
-     * Essential for reconstructing execution flows in distributed systems.
+     * Retrieves a reactive stream of audit logs correlated to a specific transaction UUID.
      *
-     * @param txId The unique transaction identifier.
-     * @return A {@link Flux} emitting audit entities for the requested transaction.
+     * <p>Essential for reconstructing execution flows and tracing cascading operations across
+     * distributed reactive services.
+     *
+     * @param txId The unique transaction correlation UUID. Must not be null.
+     * @return A {@link Flux} emitting audit entities matching the transaction context.
      */
-    @Nonnull
-    Flux<HashAuditEntity> findByTxId(@Nonnull String txId);
+    Flux<HashAuditEntity> findByTxId(UUID txId);
 
     /**
-     * Retrieves a reactive stream of audit logs scoped to a specific tenant, ordered chronologically
-     * by creation timestamp (newest first).
+     * Retrieves a reactive stream of audit logs scoped strictly to an isolated tenant,
+     * ordered chronologically by creation timestamp in descending order (newest first).
      *
-     * @param tenantId The isolated tenant identifier.
-     * @return A {@link Flux} emitting the forensic trail for the tenant.
+     * @param tenantId The isolated tenant boundary identifier. Must not be null or blank.
+     * @return A {@link Flux} emitting the chronological forensic trail for the specified tenant.
      */
-    @Nonnull
-    Flux<HashAuditEntity> findByTenantIdOrderByTimestampDesc(@Nonnull String tenantId);
+    Flux<HashAuditEntity> findByTenantIdOrderByTimestampDesc(String tenantId);
 
     /**
-     * Retrieves the forensic audit trail mapped to a specific business entity.
-     * Leverages native UUID optimization for low-latency lifecycle reconstruction.
+     * Retrieves the complete forensic audit trail mapped to a specific business entity aggregate.
      *
-     * @param entityId The unique identifier of the target domain entity (UUID).
-     * @return A {@link Flux} emitting the matching audit entities.
+     * <p>Leverages native BSON Binary UUID indexing to achieve sub-millisecond retrieval speeds
+     * for historical lifecycle reconstruction.
+     *
+     * @param entityId The universal unique identifier (UUID) of the target {@link com.thinklab.domain.model.HashToken}.
+     * @return A {@link Flux} emitting all historical audit entities linked to the entity.
      */
-    @Nonnull
-    Flux<HashAuditEntity> findByEntityId(@Nonnull UUID entityId);
+    Flux<HashAuditEntity> findByEntityId(UUID entityId);
 }

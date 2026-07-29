@@ -7,9 +7,9 @@ import com.thinklab.domain.exception.BusinessException;
 import com.thinklab.domain.model.HashAudit;
 import com.thinklab.domain.model.HashToken;
 import com.thinklab.application.port.in.GenerateHashUseCase;
-import jakarta.annotation.Nonnull;
+import com.thinklab.domain.valueobject.HashAlgorithm;
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -22,46 +22,77 @@ import java.util.UUID;
 
 /**
  * Application Interactor: Implementation of the {@link GenerateHashUseCase} input port.
- * <p>This service orchestrates the cryptographic generation process, ensuring that
- * intensive CPU operations do not block the reactive event loop.</p>
  *
- * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
+ * <p><b>Architectural Role:</b>
+ * This interactor orchestrates the resource-intensive cryptographic generation process. It guarantees
+ * that CPU-bound cryptographic calculations and serial formatting are strictly offloaded to parallel
+ * thread pools, protecting the Netty EventLoop from blocking.
+ *
+ * <p><b>Contractual Obligations:</b>
  * <ul>
- * <li><b>CPU Offloading:</b> Leverages {@code Schedulers.parallel()} for cryptographic computations to maintain Netty's responsiveness.</li>
- * <li><b>Atomic Pipeline:</b> Ensures that a hash is only considered "created" if both the registry and the audit trail are transactionally persisted.</li>
- * <li><b>Idempotency Check:</b> Prevents duplicate active hashes for the same tenant and payload context.</li>
- * <li><b>Telemetry:</b> Structured logging tags track the lifecycle of the orchestration pipeline.</li>
+ * <li><b>Constructor Injection (ADR-001):</b> Utilizes an explicit {@link Inject} constructor to guarantee
+ *     deterministic bean wiring and AOP proxy reliability.</li>
+ * <li><b>Identity Sovereignty (SHA3-512 Deterministic Seed):</b> Primary identifiers (UUIDs) are
+ *     deterministically derived using SHA3-512 hashes of the tenant and payload context, ensuring
+ *     predictable idempotency and native BSON Binary (Subtype 4) storage optimization.</li>
+ * <li><b>CPU Offloading:</b> Leverages {@code Schedulers.parallel()} for all cryptographic computations
+ *     to maintain sub-millisecond responsiveness across Netty I/O channels.</li>
+ * <li><b>Atomic Audit Binding:</b> Ensures that a hash is exclusively committed as "created" when
+ *     both the aggregate persistence and the immutable forensic audit log succeed transactionally.</li>
  * </ul>
  *
+ * @author ThinkLab
  * @version 1.0.0
+ * @since 1.0
  */
 @Slf4j
 @Singleton
-@RequiredArgsConstructor
 public class GenerateHashInteractor implements GenerateHashUseCase {
 
     private final HashTokenRepositoryPort hashTokenRepository;
     private final HashAuditRepositoryPort hashAuditRepository;
 
     /**
-     * Orchestrates the generation of a cryptographic HashToken and its initial forensic audit trail.
+     * Explicit constructor for strict dependency injection (ADR-001).
      *
-     * @param command The {@link GenerateHashCommand} encapsulating the payload, algorithm, and tenant context.
-     * @return A {@link Mono} emitting the newly generated {@link HashToken}.
-     * @throws NullPointerException if the provided command is null, preserving pipeline integrity (Fail-Fast).
-     * @apiNote Emits a {@link BusinessException} signal if an active hash already exists for the provided payload and tenant.
+     * @param hashTokenRepository The outbound port for token persistence. Must not be null.
+     * @param hashAuditRepository The outbound port for audit persistence. Must not be null.
+     * @throws NullPointerException if any repository dependency is null.
+     */
+    @Inject
+    public GenerateHashInteractor(
+            HashTokenRepositoryPort hashTokenRepository,
+            HashAuditRepositoryPort hashAuditRepository
+    ) {
+        this.hashTokenRepository = Objects.requireNonNull(hashTokenRepository, "Application constraint violated: HashTokenRepositoryPort cannot be null.");
+        this.hashAuditRepository = Objects.requireNonNull(hashAuditRepository, "Application constraint violated: HashAuditRepositoryPort cannot be null.");
+    }
+
+    /**
+     * Orchestrates the secure generation of a cryptographic {@link HashToken} and its initial forensic audit trail.
+     *
+     * <p><b>Reactive Pipeline Flow:</b>
+     * <ol>
+     *   <li>Verifies active duplicate existence by tenant and payload (TD-004 resilience).</li>
+     *   <li>Offloads CPU-bound SHA3-512 hashing and deterministic UUID generation to {@code Schedulers.parallel()}.</li>
+     *   <li>Persists the new {@link HashToken} aggregate via the repository port.</li>
+     *   <li>Generates and persists the forensic audit log correlated by a reactive transaction UUID.</li>
+     * </ol>
+     *
+     * @param command The {@link GenerateHashCommand} encapsulating payload, algorithm, and tenant context. Must not be null.
+     * @return A {@link Mono} emitting the newly generated and persisted {@link HashToken}.
+     * @throws NullPointerException if the command is null.
      */
     @Override
-    @Nonnull
-    public Mono<HashToken> execute(@Nonnull GenerateHashCommand command) {
-        Objects.requireNonNull(command, "GenerateHashCommand cannot be null.");
+    public Mono<HashToken> execute(GenerateHashCommand command) {
+        Objects.requireNonNull(command, "Application constraint violated: GenerateHashCommand cannot be null.");
 
         return hashTokenRepository.existsActiveByTenantAndPayload(command.tenantId(), command.payload())
                 .flatMap(exists -> {
                     if (exists) {
                         log.warn("[ACTION: GENERATE_HASH] [TENANT: {}] - Orchestration halted: Active hash already exists for this payload.", command.tenantId());
-                        return Mono.error(new BusinessException("HASH_DUPLICATE",
-                                "An active hash already exists for the provided tenant and payload."));
+                        return Mono.error(new BusinessException("ERR-HASH-00409",
+                                "An active cryptographic hash already exists for the provided tenant and payload context."));
                     }
                     return performGeneration(command);
                 })
@@ -69,23 +100,25 @@ public class GenerateHashInteractor implements GenerateHashUseCase {
     }
 
     /**
-     * Executes the cryptographic computation and transactionally binds it to persistence.
-     *
-     * @param command The validated generation command.
-     * @return A {@link Mono} emitting the persisted {@link HashToken}.
+     * Executes CPU-bound cryptographic calculations and transactionally binds them to persistence.
      */
     private Mono<HashToken> performGeneration(GenerateHashCommand command) {
+        UUID txId = UUID.randomUUID(); // Reactive transaction correlation ID
+
         return Mono.fromCallable(() -> {
+                    // 1. Calculate cryptographic hash using requested algorithm
                     String generatedHash = calculateHash(command.payload(), command.algorithm());
 
+                    // 2. Format as serial key if requested
                     if (command.asSerialKey()) {
                         generatedHash = formatAsSerialKey(generatedHash);
                     }
 
-                    UUID id = UUID.randomUUID();
+                    // 3. Identity Sovereignty: Derive deterministic UUID from SHA3-512 seed
+                    UUID deterministicId = generateDeterministicId(command.tenantId(), command.payload());
 
                     return HashToken.create(
-                            id.toString(),
+                            deterministicId,
                             command.tenantId(),
                             command.sourceService(),
                             command.payload(),
@@ -94,26 +127,52 @@ public class GenerateHashInteractor implements GenerateHashUseCase {
                             command.executor()
                     );
                 })
-                .subscribeOn(Schedulers.parallel()) // Offloads compute-bound task to prevent Netty EventLoop blocking
+                .subscribeOn(Schedulers.parallel()) // Offloads compute-bound hashing to protect Netty EventLoop
                 .flatMap(hashTokenRepository::save)
-                .flatMap(savedToken -> createAuditLog(savedToken, command.executor())
+                .flatMap(savedToken -> createAuditLog(savedToken, txId, command.executor())
                         .thenReturn(savedToken))
-                .doOnSuccess(token -> log.info("[ACTION: GENERATE_HASH] [TENANT: {}] [ID: {}] - Orchestration completed. Entity generated and forensic audit successfully persisted.", command.tenantId(), token.id()))
+                .doOnSuccess(token -> log.info("[ACTION: GENERATE_HASH] [ID: {}] [TENANT: {}] - Orchestration completed. Entity generated and forensic audit successfully persisted.", token.id(), command.tenantId()))
                 .doOnError(error -> {
                     if (!(error instanceof BusinessException)) {
-                        log.error("[ACTION: GENERATE_HASH] [TENANT: {}] - CRITICAL: Pipeline orchestration failed due to system exception: {}", command.tenantId(), error.getMessage());
+                        log.error("[ACTION: GENERATE_HASH] [TENANT: {}] - CRITICAL: Pipeline orchestration failed due to system exception: {}", command.tenantId(), error.getMessage(), error);
                     }
                 });
     }
 
     /**
-     * Performs the underlying cryptographic hashing logic based on the requested algorithm.
-     *
-     * @param payload   The raw string payload to be hashed.
-     * @param algorithm The cryptographic algorithm specification.
-     * @return The resulting hash as a lowercase hexadecimal string.
+     * Derives a deterministic universal unique identifier (UUID v4-compatible structure) using SHA3-512
+     * as the base cryptographic seed, fulfilling the Identity Sovereignty architectural mandate.
      */
-    private String calculateHash(String payload, com.thinklab.domain.valueobject.HashAlgorithm algorithm) {
+    private UUID generateDeterministicId(String tenantId, String payload) {
+        try {
+            MessageDigest digest = HashAlgorithm.SHA3_512.getMessageDigest();
+            String seedInput = tenantId + "::" + payload;
+            byte[] hashBytes = digest.digest(seedInput.getBytes(StandardCharsets.UTF_8));
+
+            // Extract the first 16 bytes of the SHA3-512 digest to construct a deterministic UUID
+            long msb = 0;
+            long lsb = 0;
+            for (int i = 0; i < 8; i++) {
+                msb = (msb << 8) | (hashBytes[i] & 0xff);
+            }
+            for (int i = 8; i < 16; i++) {
+                lsb = (lsb << 8) | (hashBytes[i] & 0xff);
+            }
+
+            // Set version to 4 (pseudo-random / derived) and variant to IETF RFC 4122
+            msb = (msb & 0xffffffffffff0fffL) | 0x0000000000004000L;
+            lsb = (lsb & 0x3fffffffffffffffL) | 0x8000000000000000L;
+
+            return new UUID(msb, lsb);
+        } catch (Exception e) {
+            throw new IllegalStateException("Critical Infrastructure Failure: Failed to compute deterministic SHA3-512 seed identifier.", e);
+        }
+    }
+
+    /**
+     * Performs the underlying cryptographic hashing logic based on the requested algorithm.
+     */
+    private String calculateHash(String payload, HashAlgorithm algorithm) {
         MessageDigest digest = algorithm.getMessageDigest();
         byte[] hashBytes = digest.digest(payload.getBytes(StandardCharsets.UTF_8));
         StringBuilder hexString = new StringBuilder();
@@ -128,11 +187,7 @@ public class GenerateHashInteractor implements GenerateHashUseCase {
     }
 
     /**
-     * Formats a raw hexadecimal hash string into a standardized, human-readable serial key format.
-     * <p>Applies an uppercase alphanumeric mask structured as XXXXX-XXXXX-XXXXX-XXXXX-XXXXX.</p>
-     *
-     * @param hash The raw hexadecimal hash.
-     * @return The formatted serial key string.
+     * Formats a raw hexadecimal hash string into a standardized, human-readable alphanumeric serial key format.
      */
     private String formatAsSerialKey(String hash) {
         String clean = hash.replaceAll("[^a-zA-Z0-9]", "").toUpperCase();
@@ -152,13 +207,10 @@ public class GenerateHashInteractor implements GenerateHashUseCase {
 
     /**
      * Constructs and persists an immutable forensic audit record for the generation lifecycle event.
-     *
-     * @param token    The newly generated {@link HashToken} entity.
-     * @param executor The principal identifier of the user or system executing the action.
-     * @return A {@link Mono} emitting the persisted {@link HashAudit} record.
      */
-    private Mono<HashAudit> createAuditLog(HashToken token, String executor) {
-        return hashAuditRepository.save(HashAudit.create(
+    private Mono<HashAudit> createAuditLog(HashToken token, UUID txId, String executor) {
+        HashAudit audit = HashAudit.create(
+                txId,
                 token.tenantId(),
                 token.id(),
                 "HASH_GENERATION",
@@ -166,9 +218,11 @@ public class GenerateHashInteractor implements GenerateHashUseCase {
                 executor,
                 Map.of(
                         "algorithm", token.algorithm().name(),
-                        "tokenId", token.id(),
+                        "tokenId", token.id().toString(),
                         "isSerialKey", String.valueOf(!token.generatedHash().equals(token.payload()))
                 )
-        ));
+        );
+
+        return hashAuditRepository.save(audit);
     }
 }

@@ -6,6 +6,7 @@ import io.micronaut.context.event.StartupEvent;
 import io.micronaut.health.HealthStatus;
 import io.micronaut.management.health.indicator.HealthIndicator;
 import io.micronaut.management.health.indicator.HealthResult;
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import org.reactivestreams.Publisher;
@@ -18,34 +19,37 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
 
-// ==============================================================================================
 /**
- * Integrates external dependency validation into both application startup and telemetry subsystem.
- * <p>
+ * Infrastructure Component: Integrates external dependency validation into application startup and telemetry.
+ *
+ * <p><b>Architectural Role:</b>
  * This component acts as a dual-phase resilient monitor:
- * 1. Startup (Phase 1): Eagerly warms up DNS resolution, TCP sockets, and SSL handshakes.
- * 2. Runtime (Phase 2): Continually evaluates external health for the Kubernetes Readiness Probe,
- *    isolating the pod from the routing mesh if critical outbound dependencies degrade.
- * </p>
+ * <ol>
+ * <li><b>Startup (Phase 1):</b> Eagerly warms up DNS resolution, TCP sockets, and SSL handshakes.</li>
+ * <li><b>Runtime (Phase 2):</b> Continually evaluates external health for Kubernetes Readiness Probes,
+ *     isolating the pod from the routing mesh if critical outbound dependencies degrade.</li>
+ * </ol>
  *
- * <b>Thread Safety:</b> Thread-safe (Stateless beyond immutable configuration state).
- * <b>Invariant:</b> The internal HTTP client timeout must strictly remain under the orchestration
- *                   probe timeout threshold to prevent cascading thread starvation.
+ * <p><b>Contractual Obligations:</b>
+ * <ul>
+ * <li><b>Constructor Injection (ADR-001):</b> Utilizes an explicit {@link Inject} constructor to guarantee
+ *     deterministic bean wiring and AOP proxy reliability.</li>
+ * <li><b>Thread Safety:</b> Thread-safe and stateless beyond immutable configuration properties.</li>
+ * <li><b>Bounded Timeout Invariant:</b> The internal HTTP client connection timeout strictly remains under
+ *     the orchestration probe threshold to prevent cascading thread starvation.</li>
+ * </ul>
  *
- * @module      Thinklab Infrastructure / Telemetry
- * @pattern     Eager Initialization & Custom Health Indicator (Reactive Aggregator)
- * @maintainer  Thinklab Systems Engineering Team
- * @version     1.2.0
+ * @author ThinkLab
+ * @version 1.2.0
+ * @since 1.0
  */
-// ==============================================================================================
 @Singleton
 @Slf4j
 public class ExternalEndpointsHealthIndicator implements HealthIndicator, ApplicationEventListener<StartupEvent> {
 
-    // Transitioned from List<String> to Map<String, String> for logical aliasing
-    @Property(name = "warmup.endpoints")
-    private Map<String, String> targetEndpoints;
+    private final Map<String, String> targetEndpoints;
 
     /**
      * Pre-configured, reusable native HTTP client.
@@ -56,19 +60,27 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
             .connectTimeout(Duration.ofSeconds(2))
             .build();
 
-    // ----------------------------------------------------------------------------------------------
-    // PHASE 1: BOOTSTRAP WARM-UP (Eager Initialization)
-    // ----------------------------------------------------------------------------------------------
+    /**
+     * Explicit constructor for strict dependency injection (ADR-001) and property binding.
+     *
+     * @param targetEndpoints Map of logical endpoint aliases to target URIs. Optional/nullable.
+     */
+    @Inject
+    public ExternalEndpointsHealthIndicator(
+            @Property(name = "warmup.endpoints") Map<String, String> targetEndpoints
+    ) {
+        this.targetEndpoints = targetEndpoints;
+    }
 
     /**
      * Intercepts the framework's StartupEvent to proactively initialize network paths.
      *
-     * @param event The application startup event triggered by the IoC container.
-     * @pre         The application context is fully initialized and configuration injected.
-     * @post        DNS and SSL caches are warmed up without blocking the main startup thread.
+     * @param event The application startup event triggered by the IoC container. Must not be null.
      */
     @Override
     public void onApplicationEvent(StartupEvent event) {
+        Objects.requireNonNull(event, "Application constraint violated: StartupEvent cannot be null.");
+
         if (targetEndpoints == null || targetEndpoints.isEmpty()) {
             log.info("[EXTERNAL_HEALTH_WARMUP] - No external targets configured. Skipping warmup phase.");
             return;
@@ -82,19 +94,13 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
                 .subscribe();
     }
 
-    // ----------------------------------------------------------------------------------------------
-    // PHASE 2: TELEMETRY & HEALTH INDICATOR (Runtime / Orchestrator Probes)
-    // ----------------------------------------------------------------------------------------------
-
     /**
      * Evaluates the current health state of all configured external endpoints.
-     * <p>
-     * Invoked periodically by Micronaut's actuator subsystem. Executes all health checks
-     * concurrently via Project Reactor and aggregates the results into a unified topology state.
-     * </p>
+     *
+     * <p>Invoked periodically by Micronaut's actuator subsystem. Executes all health checks
+     * concurrently via Project Reactor and aggregates results into a unified topology state.
      *
      * @return A Publisher emitting the aggregated health status and diagnostic map.
-     *         Evaluates in finite time bound by the underlying HttpClient configuration.
      */
     @Override
     public Publisher<HealthResult> getResult() {
@@ -122,20 +128,14 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
                 });
     }
 
-    // ----------------------------------------------------------------------------------------------
-    // SHARED INFRASTRUCTURE: DETERMINISTIC NETWORK PROBING
-    // ----------------------------------------------------------------------------------------------
-
     /**
      * Dispatches a deterministic, non-blocking HTTP GET request to the specified target.
-     * <p>
-     * Discards the HTTP response body immediately to enforce an O(1) memory footprint
-     * per request. Safely handles and wraps network/DNS exceptions to maintain reactive stream integrity.
-     * </p>
      *
-     * @param endpointDefinition A Key-Value pair representing the logical alias and the target URI.
-     * @return A Mono emitting a Key-Value pair containing the logical alias and its resolved
-     *         health state. Never emits an error signal.
+     * <p>Discards the HTTP response body immediately to enforce an O(1) memory footprint
+     * per request. Safely handles and wraps network/DNS exceptions to maintain reactive stream integrity.
+     *
+     * @param endpointDefinition A Key-Value pair representing the logical alias and target URI. Must not be null.
+     * @return A Mono emitting a Key-Value pair containing the logical alias and resolved health state. Never errors.
      */
     private Mono<Map.Entry<String, String>> checkEndpoint(Map.Entry<String, String> endpointDefinition) {
         String alias = endpointDefinition.getKey();

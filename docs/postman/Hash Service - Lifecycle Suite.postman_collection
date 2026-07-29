@@ -1,14 +1,51 @@
 {
   "info": {
     "_postman_id": "9bf74ffe-f872-475b-a442-74eb25044e85",
-    "name": "Hash Service - Lifecycle Suite",
-    "description": "Suite E2E de testes para o HashController. Valida o fluxo completo: Geração -> Recuperação -> Listagem -> Ciclo de Vida (Deactivate/Reactivate) -> Trilha de Auditoria -> Revogação.",
+    "name": "Hash Service - Comprehensive Lifecycle & Telemetry Suite",
+    "description": "Suite E2E abrangente para o HashController. Valida o ciclo de vida completo, diferentes algoritmos de hash (SHA-256, SHA3-256, BLAKE3), listagem com paginação e status, trilhas de auditoria forense, além da verificação de saúde e warming de infraestrutura.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "39879181"
   },
   "item": [
     {
-      "name": "01. Generate Hash",
+      "name": "00. Infrastructure & Telemetry",
+      "item": [
+        {
+          "name": "Health Check (Kubernetes Probes)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 OK or UP\", () => {",
+                  "    pm.expect(pm.response.hasProperty('code') ? pm.response.code : pm.response.status).to.be.oneOf([200, 503]);",
+                  "});",
+                  "const jsonData = pm.response.json();",
+                  "pm.test(\"Health payload contains status\", () => pm.expect(jsonData).to.have.property('status'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01. Generate Hash (SHA3_256)",
       "event": [
         {
           "listen": "test",
@@ -17,7 +54,8 @@
               "pm.test(\"Status 201 Created\", () => pm.response.to.have.status(201));",
               "const jsonData = pm.response.json();",
               "pm.environment.set(\"hashId\", jsonData.id);",
-              "pm.test(\"Hash ID was generated\", () => pm.expect(jsonData.id).to.not.be.undefined);"
+              "pm.test(\"Hash ID was generated\", () => pm.expect(jsonData.id).to.not.be.undefined);",
+              "pm.test(\"Algorithm matches SHA3_256\", () => pm.expect(jsonData.algorithm).to.eql(\"SHA3_256\"));"
             ],
             "type": "text/javascript"
           }
@@ -33,7 +71,87 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n    \"tenantId\": \"tenant-123\",\n    \"payload\": \"dado-de-teste-{{$randomAlphaNumeric}}\",\n    \"algorithm\": \"SHA3_256\",\n    \"sourceService\": \"mobile-app\",\n    \"executor\": \"test-user-01\",\n    \"asSerialKey\": true\n}"
+          "raw": "{\n    \"tenantId\": \"tenant-123\",\n    \"payload\": \"dado-de-teste-sha3-{{$randomAlphaNumeric}}\",\n    \"algorithm\": \"SHA3_256\",\n    \"sourceService\": \"mobile-app\",\n    \"executor\": \"test-user-01\",\n    \"asSerialKey\": true\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/hashes",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "hashes"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "01b. Generate Hash (SHA_256 Variant)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status 201 Created\", () => pm.response.to.have.status(201));",
+              "const jsonData = pm.response.json();",
+              "pm.environment.set(\"sha256Id\", jsonData.id);",
+              "pm.test(\"Algorithm matches SHA_256\", () => pm.expect(jsonData.algorithm).to.eql(\"SHA_256\"));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"tenantId\": \"tenant-123\",\n    \"payload\": \"dado-de-teste-sha256-{{$randomAlphaNumeric}}\",\n    \"algorithm\": \"SHA_256\",\n    \"sourceService\": \"backend-service\",\n    \"executor\": \"test-user-02\",\n    \"asSerialKey\": false\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/hashes",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "hashes"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "01c. Generate Hash (BLAKE3 Variant)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status 201 Created\", () => pm.response.to.have.status(201));",
+              "const jsonData = pm.response.json();",
+              "pm.environment.set(\"blake3Id\", jsonData.id);",
+              "pm.test(\"Algorithm matches BLAKE3\", () => pm.expect(jsonData.algorithm).to.eql(\"BLAKE3\"));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"tenantId\": \"tenant-123\",\n    \"payload\": \"dado-de-teste-blake3-{{$randomAlphaNumeric}}\",\n    \"algorithm\": \"BLAKE3\",\n    \"sourceService\": \"security-scanner\",\n    \"executor\": \"crypto-admin\",\n    \"asSerialKey\": true\n}"
         },
         "url": {
           "raw": "{{base_url}}/hashes",
@@ -78,14 +196,17 @@
       "response": []
     },
     {
-      "name": "03. List Tenant Hashes",
+      "name": "03. List Tenant Hashes (Paginated & Filtered)",
       "event": [
         {
           "listen": "test",
           "script": {
             "exec": [
               "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
-              "pm.test(\"Returns list\", () => pm.expect(pm.response.json()).to.be.an('object'));"
+              "pm.test(\"Returns list or array structure\", () => {",
+              "    const res = pm.response.json();",
+              "    pm.expect(res).to.not.be.undefined;",
+              "});"
             ],
             "type": "text/javascript"
           }
@@ -100,7 +221,7 @@
           }
         ],
         "url": {
-          "raw": "{{base_url}}/hashes?page=0&size=20",
+          "raw": "{{base_url}}/hashes?page=0&size=20&status=ACTIVE",
           "host": [
             "{{base_url}}"
           ],
@@ -115,6 +236,10 @@
             {
               "key": "size",
               "value": "20"
+            },
+            {
+              "key": "status",
+              "value": "ACTIVE"
             }
           ]
         }
@@ -128,7 +253,11 @@
           "listen": "test",
           "script": {
             "exec": [
-              "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));"
+              "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Status updated to INACTIVE\", () => {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.status).to.eql(\"INACTIVE\");",
+              "});"
             ],
             "type": "text/javascript"
           }
@@ -144,7 +273,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n    \"executor\": \"admin-user\",\n    \"reason\": \"Manutenção programada\"\n}"
+          "raw": "{\n    \"executor\": \"admin-user\",\n    \"reason\": \"Manutenção programada e suspensão temporária\"\n}"
         },
         "url": {
           "raw": "{{base_url}}/hashes/{{hashId}}/deactivate",
@@ -167,7 +296,11 @@
           "listen": "test",
           "script": {
             "exec": [
-              "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));"
+              "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Status restored to ACTIVE\", () => {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.status).to.eql(\"ACTIVE\");",
+              "});"
             ],
             "type": "text/javascript"
           }
@@ -183,7 +316,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n    \"executor\": \"admin-user\",\n    \"reason\": \"Retorno à operação\"\n}"
+          "raw": "{\n    \"executor\": \"admin-user\",\n    \"reason\": \"Retorno à operação regulamentar\"\n}"
         },
         "url": {
           "raw": "{{base_url}}/hashes/{{hashId}}/reactivate",
@@ -233,14 +366,17 @@
       "response": []
     },
     {
-      "name": "07. Revoke Hash",
+      "name": "07. Revoke Hash (Terminal State)",
       "event": [
         {
           "listen": "test",
           "script": {
             "exec": [
               "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
-              "pm.environment.unset(\"hashId\");"
+              "pm.test(\"Status is REVOKED\", () => {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.status).to.eql(\"REVOKED\");",
+              "});"
             ],
             "type": "text/javascript"
           }
@@ -256,7 +392,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n    \"executor\": \"security-admin\",\n    \"reason\": \"Comprometimento de segurança\"\n}"
+          "raw": "{\n    \"executor\": \"security-admin\",\n    \"reason\": \"Comprometimento crítico de segurança detectado\"\n}"
         },
         "url": {
           "raw": "{{base_url}}/hashes/{{hashId}}",

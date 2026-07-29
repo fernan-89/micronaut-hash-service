@@ -8,25 +8,43 @@ import io.micronaut.data.annotation.Index;
 import io.micronaut.data.annotation.Indexes;
 import io.micronaut.data.annotation.MappedEntity;
 import io.micronaut.serde.annotation.Serdeable;
-import jakarta.annotation.Nonnull;
-import jakarta.annotation.Nullable;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Infrastructure Entity: Persistence model for the forensic audit trail.
- * <p>Maps directly to the MongoDB "hash_audit" collection. This entity implements the
- * Append-Only principle, serving as a high-integrity container for immutable forensic event history.</p>
+ * Infrastructure Entity: Persistence model for the forensic audit trail mapped to the MongoDB collection.
  *
- * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
+ * <p><b>Architectural Role:</b>
+ * This record serves as the MongoDB persistence mapping for the {@link HashAudit} domain aggregate.
+ * It acts as an Anti-Corruption Layer (ACL), completely decoupling the immutable domain model from
+ * database-specific schema details, BSON types, and Micronaut Data annotations.
+ *
+ * <p><b>Contractual Obligations:</b>
  * <ul>
- * <li><b>Anti-Corruption Layer (ACL):</b> Encapsulates persistence schema, decoupling the Domain from database specifics.</li>
- * <li><b>Forensic Integrity:</b> Enforces append-only semantics to maintain the immutable audit trail.</li>
- * <li><b>Performance-Oriented:</b> Uses BSON Binary Subtype 4 for efficient entity correlation.</li>
- * <li><b>Observability:</b> Provides multi-dimensional indexing for real-time audit retrieval.</li>
+ * <li><b>Append-Only Forensic Integrity:</b> Enforces structural invariants to ensure the audit trail
+ *     remains immutable and historically accurate post-persistence.</li>
+ * <li><b>Identity Sovereignty (BSON Binary):</b> Utilizes {@link UUID} for primary keys, transaction IDs,
+ *     and entity references, ensuring native BSON Binary (Subtype 4) storage optimization in MongoDB.</li>
+ * <li><b>High-Performance Indexing:</b> Declares multi-dimensional indexes on transaction correlation IDs,
+ *     tenant boundaries, entity identifiers, and timestamps for real-time forensic auditing queries.</li>
  * </ul>
+ *
+ * @param id         The globally unique primary identifier (stored as BSON Binary UUID).
+ * @param txId       The reactive transaction correlation UUID.
+ * @param tenantId   The strictly isolated tenant boundary owner.
+ * @param entityId   The deterministic UUID of the targeted {@link com.thinklab.domain.model.HashToken}.
+ * @param operation  The standardized business operation executed (e.g., "CREATION", "REVOCATION").
+ * @param status     The definitive operational outcome (e.g., "SUCCESS").
+ * @param executorId The verified agent who authorized the action.
+ * @param timestamp  The exact UTC instant the event materialized.
+ * @param metadata   Rich contextual telemetry key-value pairs.
+ *
+ * @author ThinkLab
+ * @since 1.0
  */
 @Serdeable
 @Introspected
@@ -39,47 +57,81 @@ import java.util.UUID;
         @Index(columns = {"timestamp"})
 })
 public record HashAuditEntity(
+
         @Id
         @GeneratedValue
-        String id,
+        UUID id,
 
-        @Nonnull
-        String txId,
+        UUID txId,
 
-        @Nonnull
         String tenantId,
 
-        @Nonnull
         UUID entityId,
 
-        @Nonnull
         String operation,
 
-        @Nonnull
         String status,
 
-        @Nonnull
         String executorId,
 
-        @Nonnull
         Instant timestamp,
 
-        @Nullable
         Map<String, Object> metadata
 ) {
 
     /**
+     * Compact constructor enforcing absolute persistence invariants and structural integrity.
+     *
+     * <p><b>Contract:</b> Guarantees that no uninitialized or logically invalid state can be written
+     * to the database. Defensively copies nested maps.
+     *
+     * @throws NullPointerException if any mandatory parameter is null, or if metadata contains null keys/values.
+     * @throws IllegalArgumentException if any mandatory string parameter is blank.
+     */
+    public HashAuditEntity {
+        Objects.requireNonNull(id, "Persistence Invariant Violation: Audit Entity ID cannot be null.");
+        Objects.requireNonNull(txId, "Persistence Invariant Violation: Transaction ID cannot be null.");
+        Objects.requireNonNull(tenantId, "Persistence Invariant Violation: Tenant ID cannot be null.");
+        Objects.requireNonNull(entityId, "Persistence Invariant Violation: Entity ID cannot be null.");
+        Objects.requireNonNull(operation, "Persistence Invariant Violation: Operation cannot be null.");
+        Objects.requireNonNull(status, "Persistence Invariant Violation: Status cannot be null.");
+        Objects.requireNonNull(executorId, "Persistence Invariant Violation: Executor ID cannot be null.");
+        Objects.requireNonNull(timestamp, "Persistence Invariant Violation: Timestamp cannot be null.");
+
+        if (tenantId.isBlank()) {
+            throw new IllegalArgumentException("Persistence Invariant Violation: Tenant ID cannot be blank.");
+        }
+        if (operation.isBlank()) {
+            throw new IllegalArgumentException("Persistence Invariant Violation: Operation cannot be blank.");
+        }
+        if (status.isBlank()) {
+            throw new IllegalArgumentException("Persistence Invariant Violation: Status cannot be blank.");
+        }
+        if (executorId.isBlank()) {
+            throw new IllegalArgumentException("Persistence Invariant Violation: Executor ID cannot be blank.");
+        }
+
+        // Defensively secure the metadata map using Map.copyOf (intrinsically rejects null keys and values).
+        metadata = (metadata == null || metadata.isEmpty())
+                ? Collections.emptyMap()
+                : Map.copyOf(metadata);
+    }
+
+    /**
      * Factory method to map a pure Domain Audit model to this Persistence Entity.
      *
-     * @param domain The domain aggregate record.
-     * @return A mapped infrastructure entity instance.
+     * @param domain The immutable {@link HashAudit} domain aggregate record.
+     * @return A mapped, strictly validated {@link HashAuditEntity} instance ready for MongoDB insertion.
+     * @throws NullPointerException if the provided domain aggregate is null.
      */
-    public static HashAuditEntity fromDomain(@Nonnull HashAudit domain) {
+    public static HashAuditEntity fromDomain(HashAudit domain) {
+        Objects.requireNonNull(domain, "Infrastructure constraint violated: Domain audit aggregate cannot be null for entity mapping.");
+
         return new HashAuditEntity(
                 domain.id(),
                 domain.txId(),
                 domain.tenantId(),
-                UUID.fromString(domain.entityId()),
+                domain.entityId(),
                 domain.operation(),
                 domain.status(),
                 domain.executorId(),
@@ -91,19 +143,19 @@ public record HashAuditEntity(
     /**
      * Maps the persistence entity back to the pure Domain Audit model.
      *
-     * @return A domain record instance.
+     * @return A pristine, immutable {@link HashAudit} domain record instance.
      */
     public HashAudit toDomain() {
         return new HashAudit(
                 id,
                 txId,
                 tenantId,
-                entityId.toString(),
+                entityId,
                 operation,
                 status,
                 executorId,
                 timestamp,
-                metadata != null ? Map.copyOf(metadata) : Map.of()
+                metadata
         );
     }
 }

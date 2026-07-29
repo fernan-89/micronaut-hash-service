@@ -91,7 +91,7 @@ mongodb:
 # ----------------------------------------------------------------------------------------------
 # /**
 #  * @section     Eager Initialization / Dependency Warm-up
-#  * @description Configures external target URLs for the HttpWarmupObserver.
+#  * @description Configures external target URLs for the ExternalEndpointsHealthIndicator.
 #  * These endpoints are proactively pinged during the application StartupEvent
 #  * to resolve DNS, establish TCP connections, and complete SSL handshakes
 #  * before the application accepts external traffic.

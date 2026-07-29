@@ -6,78 +6,124 @@ import com.thinklab.domain.valueobject.HashStatus;
 import io.micronaut.core.annotation.Introspected;
 import io.micronaut.serde.annotation.Serdeable;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.annotation.Nonnull;
-import jakarta.annotation.Nullable;
 
 import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
 
 /**
- * Infrastructure DTO: Web response projection for a cryptographic {@link com.thinklab.domain.model.HashToken}.
- * <p>This DTO acts as the formal public-facing projection, ensuring that the domain model
- * remains shielded from API-specific formatting while providing clear state
- * metadata to the consumer.</p>
+ * Infrastructure DTO: Web response projection for a cryptographic {@link HashToken}.
  *
- * <p><b>Architectural Principles (Mission-Critical Pattern):</b></p>
+ * <p><b>Architectural Role:</b>
+ * This record serves as the primary read-model projection for the external API. It acts as a
+ * defensive shield for the domain aggregate, intentionally omitting highly sensitive operational
+ * data (such as the raw cryptographic payload and internal executor identities) to ensure
+ * external consumers only receive a sanitized, safe view of the registry.
+ *
+ * <p><b>Contractual Obligations:</b>
  * <ul>
- * <li><b>Projection Pattern:</b> Shields domain aggregates from external API consumers.</li>
- * <li><b>Immutability:</b> Implemented as a Java record to ensure thread-safe, consistent data transfer.</li>
- * <li><b>AOT Optimized:</b> Compiled serialization via Micronaut Serde for low-latency delivery.</li>
+ * <li><b>Projection Pattern:</b> Ensures strict isolation. Changes to the internal structure of
+ *     the {@code HashToken} aggregate will not leak to or break the API contract unless explicitly mapped.</li>
+ * <li><b>AOT Compilation Strategy:</b> Employs Micronaut's {@code @Serdeable} and {@code @Introspected}
+ *     for reflection-free, zero-allocation serialization, ensuring ultra-low latency JSON streaming
+ *     within Netty EventLoops.</li>
+ * <li><b>Defensive Integrity (Fail-Fast):</b> The compact constructor guarantees that no corrupted,
+ *     null, or malformed state can be serialized.</li>
  * </ul>
  *
- * @param id            Unique system identifier for the hash registry.
- * @param tenantId      The isolated tenant context owner.
- * @param sourceService Identifier of the microservice that requested the generation.
- * @param generatedHash The final calculated cryptographic hash string.
- * @param algorithm     The cryptographic standard used.
- * @param status        The current lifecycle status.
- * @param createdAt     UTC timestamp of the initial generation.
- * @param updatedAt     UTC timestamp of the last status or metadata change.
- * @param version       Concurrency control version (Optimistic Locking).
+ * @param id            The universally unique identifier (UUID) derived from the deterministic seed.
+ * @param tenantId      The strictly isolated tenant boundary owner.
+ * @param sourceService The identifier of the microservice or system that requested the generation.
+ * @param generatedHash The final calculated, sanitized cryptographic hash string.
+ * @param algorithm     The cryptographic algorithm utilized (e.g., SHA3_512).
+ * @param status        The current operational lifecycle status.
+ * @param createdAt     The exact UTC instant of the initial record materialization.
+ * @param updatedAt     The exact UTC instant of the last lifecycle state change (null if never modified).
+ * @param version       The optimistic locking version for database concurrency control.
+ *
+ * @author ThinkLab
+ * @since 1.0
  */
 @Serdeable
 @Introspected
 @Schema(
         name = "HashResponse",
-        description = "Standardized response payload representing a cryptographic token and its lifecycle metadata."
+        description = "Standardized, immutable response payload representing a sanitized cryptographic token and its lifecycle metadata."
 )
 public record HashResponse(
-        @Schema(description = "Internal unique ID", example = "64b5f9a2e4b011a2b3c4d5e6")
-        String id,
 
-        @Schema(description = "Isolated tenant identifier", example = "THINKLAB-PRD-01")
+        @Schema(description = "Universally unique identifier for the hash registry.", example = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d")
+        UUID id,
+
+        @Schema(description = "Isolated tenant identifier boundary.", example = "THINKLAB-PRD-01")
         String tenantId,
 
-        @Schema(description = "Originating microservice name", example = "payment-gateway")
+        @Schema(description = "Originating microservice or upstream system name.", example = "payment-gateway")
         String sourceService,
 
-        @Schema(description = "The computed cryptographic hash result", example = "a5e1...f3d9")
+        @Schema(description = "The computed cryptographic hash result.", example = "a5e1...f3d9")
         String generatedHash,
 
-        @Schema(description = "Cryptographic algorithm used")
+        @Schema(description = "The cryptographic algorithm strategy utilized.")
         HashAlgorithm algorithm,
 
-        @Schema(description = "Current lifecycle status of the token")
+        @Schema(description = "The current operational lifecycle status of the token.")
         HashStatus status,
 
-        @Schema(description = "Generation timestamp in ISO-8601 format")
+        @Schema(description = "Generation timestamp in strict UTC ISO-8601 format.")
         Instant createdAt,
 
-        @Nullable
-        @Schema(description = "Last update timestamp in ISO-8601 format")
+        @Schema(description = "Last update timestamp in strict UTC ISO-8601 format (null if unaltered).")
         Instant updatedAt,
 
-        @Schema(description = "Concurrency control version", example = "1")
+        @Schema(description = "Concurrency control version used for optimistic locking.", example = "1")
         Long version
 ) {
 
     /**
-     * Factory method to project a Domain Aggregate Root into this public API Response.
-     * This transition ensures that infrastructure-level changes do not leak into the Domain.
+     * Compact constructor to enforce programmatic fail-fast validation for the projection.
      *
-     * @param domain The pure domain aggregate instance.
-     * @return A mapped and sanitized {@link HashResponse}.
+     * <p><b>Contract:</b> Guarantees that the serialization engine will never process an uninitialized
+     * or logically corrupted state. The {@code updatedAt} field is uniquely permitted to be null.
+     *
+     * @throws NullPointerException if any mandatory parameter is null.
+     * @throws IllegalArgumentException if any mandatory string parameter is blank.
      */
-    public static HashResponse fromDomain(@Nonnull HashToken domain) {
+    public HashResponse {
+        Objects.requireNonNull(id, "Projection Invariant Violation: ID cannot be null.");
+        Objects.requireNonNull(tenantId, "Projection Invariant Violation: Tenant ID cannot be null.");
+        Objects.requireNonNull(sourceService, "Projection Invariant Violation: Source Service cannot be null.");
+        Objects.requireNonNull(generatedHash, "Projection Invariant Violation: Generated Hash cannot be null.");
+        Objects.requireNonNull(algorithm, "Projection Invariant Violation: Algorithm cannot be null.");
+        Objects.requireNonNull(status, "Projection Invariant Violation: Status cannot be null.");
+        Objects.requireNonNull(createdAt, "Projection Invariant Violation: CreatedAt timestamp cannot be null.");
+        Objects.requireNonNull(version, "Projection Invariant Violation: Version cannot be null.");
+
+        if (tenantId.isBlank()) {
+            throw new IllegalArgumentException("Projection Invariant Violation: Tenant ID cannot be blank.");
+        }
+        if (sourceService.isBlank()) {
+            throw new IllegalArgumentException("Projection Invariant Violation: Source Service cannot be blank.");
+        }
+        if (generatedHash.isBlank()) {
+            throw new IllegalArgumentException("Projection Invariant Violation: Generated Hash cannot be blank.");
+        }
+    }
+
+    /**
+     * Factory method to safely project a Domain Aggregate Root into this public API Response.
+     *
+     * <p><b>Reactive Mapping:</b> Designed to be executed asynchronously within a Project Reactor
+     * {@code .map()} operator. It selectively filters out the raw payload and executor tracking
+     * data to maintain domain secrecy.
+     *
+     * @param domain The pure, immutable {@link HashToken} aggregate instance.
+     * @return A mapped, sanitized, and AOT serialization-ready {@link HashResponse}.
+     * @throws NullPointerException if the provided domain aggregate is null.
+     */
+    public static HashResponse fromDomain(HashToken domain) {
+        Objects.requireNonNull(domain, "Infrastructure constraint violated: Domain aggregate cannot be null for projection.");
+
         return new HashResponse(
                 domain.id(),
                 domain.tenantId(),

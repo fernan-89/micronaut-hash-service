@@ -12,29 +12,30 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import java.security.Security;
 import java.util.TimeZone;
 
-// ==============================================================================================
 /**
  * Main Entry Point: Bootstrap class for the Thinklab Hash Service.
- * <p>
- * This class orchestrates the application startup using the Micronaut framework,
- * ensuring high scalability, low memory footprint, and non-blocking execution.
- * It also establishes critical JVM-level invariants before the IoC container boots.
- * </p>
  *
- * <b>Architectural Role:</b>
+ * <p><b>Architectural Role:</b>
+ * This class orchestrates the application bootstrap sequence using the Micronaut framework, ensuring
+ * high scalability, low memory footprint, and non-blocking asynchronous execution. It also establishes
+ * critical JVM-level security and time-drift invariants before the inversion of control (IoC) container boots.
+ *
+ * <p><b>Contractual Obligations:</b>
  * <ul>
- *     <li><b>Bootstrap:</b> Triggers the dependency injection container and Netty server.</li>
- *     <li><b>API Documentation:</b> Defines global OpenAPI 3.0 metadata for Swagger.</li>
- *     <li><b>Component Scan Root:</b> Discovers all sub-modules (domain, application, infra).</li>
+ * <li><b>Universal UTC Invariant:</b> Forcefully normalizes the JVM default timezone to UTC to prevent
+ *     distributed time drift across cryptographic token lifecycles.</li>
+ * <li><b>Unhandled Exception Guard:</b> Configures a global uncaught exception handler to intercept
+ *     catastrophic thread deaths bypassing reactive contexts.</li>
+ * <li><b>Cryptographic Provider Injection:</b> Registers the Bouncy Castle security provider to satisfy
+ *     advanced hashing algorithm dependencies.</li>
+ * <li><b>Fail-Fast Bootstrapping:</b> Intercepts container initialization failures and exits cleanly with
+ *     a non-zero status code for orchestration mesh awareness.</li>
  * </ul>
  *
- * <b>Invariant:</b> The JVM TimeZone is strictly forced to UTC to prevent distributed time drift.
- *
- * @module      Thinklab Infrastructure / Core
- * @maintainer  Thinklab Systems Engineering Team
- * @version     1.0.0
+ * @author ThinkLab
+ * @version 1.0.0
+ * @since 1.0
  */
-// ==============================================================================================
 @OpenAPIDefinition(
         info = @Info(
                 title = "hash-&-serial-registry",
@@ -48,17 +49,12 @@ public class Application {
 
     private static final Logger log = LoggerFactory.getLogger(Application.class);
 
-    // ----------------------------------------------------------------------------------------------
     /**
-     * Main method to launch the Micronaut runtime and enforce JVM constraints.
+     * Main method to launch the Micronaut runtime and enforce global JVM baseline constraints.
      *
-     * @param args Command line arguments passed during startup.
-     * @pre    The JVM has allocated the required heap space and OS file descriptors.
-     * @post   The Netty reactive web server is bound to the configured port, accepting traffic.
+     * @param args Command line arguments passed during startup. Must not be null.
      */
-    // ----------------------------------------------------------------------------------------------
     public static void main(String[] args) {
-
         // 1. Mission Critical: Enforce UTC globally to prevent time-drift bugs in distributed tokens
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
 
@@ -67,10 +63,10 @@ public class Application {
                 log.error("[JVM_FATAL] - Unhandled exception in thread [{}]: {}", thread.getName(), throwable.getMessage(), throwable)
         );
 
-        // 3. Mission Critical: Inject Bouncy Castle to satisfy native JVM BLAKE3 dependencies
+        // 3. Mission Critical: Inject Bouncy Castle to satisfy native JVM cryptographic dependencies
         Security.addProvider(new BouncyCastleProvider());
 
-        // 4. Boot: Use the Builder for explicit control over startup arguments
+        // 4. Boot: Use the Builder for explicit control over startup arguments and container lifecycle
         try {
             Micronaut.build(args)
                     .mainClass(Application.class)
