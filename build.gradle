@@ -53,6 +53,14 @@ dependencies {
     implementation 'io.micronaut.validation:micronaut-validation'
     implementation 'io.swagger.core.v3:swagger-annotations'
 
+
+    // -------------------------------------------------------------------------
+    // /**
+    //  Logstash Logback Encoder para suporte a JSON estruturado
+    //  */
+    // -------------------------------------------------------------------------
+    implementation("net.logstash.logback:logstash-logback-encoder:7.4")
+
     // -------------------------------------------------------------------------
     // /**
     //  * @layer Infrastructure & Data Persistence (Reactive Paradigm)

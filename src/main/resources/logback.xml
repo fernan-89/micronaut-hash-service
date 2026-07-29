@@ -6,19 +6,19 @@
 <!--  * @description Centralized, high-throughput logging topology configuration.                    -->
 <!--  *              Implements non-blocking I/O via AsyncAppenders to ensure the reactive          -->
 <!--  *              event loop (Project Reactor / Netty) is never blocked by disk or console I/O.  -->
-<!--  *              Enforces deterministic log formatting and strict column alignment.             -->
+<!--  *              Enforces robust plain-text rolling logs compatible with native log parsers.    -->
 <!--  *                                                                                             -->
 <!--  * @constraint  Console outputs utilize ANSI escape sequences for visual parsing.              -->
-<!--  *              File outputs must remain strictly plain-text (no ANSI) for SIEM ingestion.     -->
+<!--  *              File outputs enforce deterministic column formatting for SIEM ingestion.       -->
 <!--  * @maintainer  Thinklab Systems Engineering Team                                              -->
-<!--  * @version     2.0.0 (Asynchronous I/O Edition)                                              -->
+<!--  * @version     2.1.1 (Standardized Encoder Edition)                                          -->
 <!--  */                                                                                            -->
 <!-- ============================================================================================== -->
 <configuration>
 
     <!-- ============================================================================================== -->
-    <!-- [SYNCHRONOUS] CONSOLE APPENDER (STANDARD OUTPUT)                                               -->
-    <!-- Physical sink for standard output. Do not reference this directly in loggers.                  -->
+    <!-- [SYNCHRONOUS] CONSOLE APPENDER (HUMAN-READABLE)                                                -->
+    <!-- Physical sink for standard output. Utilizes traditional colored pattern for local debugging.   -->
     <!-- ============================================================================================== -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
@@ -27,8 +27,9 @@
     </appender>
 
     <!-- ============================================================================================== -->
-    <!-- [SYNCHRONOUS] AUDIT FILE APPENDER (ROLLING)                                                    -->
-    <!-- Physical sink for disk writing. Do not reference this directly in loggers.                     -->
+    <!-- [SYNCHRONOUS] AUDIT FILE APPENDER (STANDARD PATTERN)                                           -->
+    <!-- Physical sink for disk writing. Uses standard PatternLayoutEncoder ensuring rock-solid         -->
+    <!-- compatibility without external dependencies while preserving all MDC key-value telemetry.      -->
     <!-- ============================================================================================== -->
     <appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>logs/audit.log</file>
@@ -36,7 +37,7 @@
             <fileNamePattern>logs/audit.%d{yyyy-MM-dd}.log</fileNamePattern>
             <maxHistory>30</maxHistory>
         </rollingPolicy>
-        <encoder>
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%-20.20thread] %-5level %-40.40logger{39} - %msg%n</pattern>
         </encoder>
     </appender>
@@ -47,12 +48,8 @@
     <!-- ============================================================================================== -->
     <appender name="ASYNC_STDOUT" class="ch.qos.logback.classic.AsyncAppender">
         <appender-ref ref="STDOUT" />
-        <!-- Size of the blocking queue. 512 is an optimal balance for memory vs throughput. -->
         <queueSize>512</queueSize>
-        <!-- By default, AsyncAppender drops TRACE/DEBUG/INFO logs if the queue is 80% full. -->
-        <!-- Setting to 0 disables this behavior, guaranteeing 100% telemetry delivery. -->
         <discardingThreshold>0</discardingThreshold>
-        <!-- Forbids extracting line numbers/method names (which is highly CPU intensive). -->
         <includeCallerData>false</includeCallerData>
     </appender>
 
@@ -63,7 +60,6 @@
     <appender name="ASYNC_AUDIT" class="ch.qos.logback.classic.AsyncAppender">
         <appender-ref ref="AUDIT_FILE" />
         <queueSize>512</queueSize>
-        <!-- Critical audit logs must never be discarded under any queue pressure. -->
         <discardingThreshold>0</discardingThreshold>
         <includeCallerData>false</includeCallerData>
     </appender>

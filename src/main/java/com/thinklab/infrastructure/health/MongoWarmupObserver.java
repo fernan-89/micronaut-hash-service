@@ -10,6 +10,7 @@ import org.bson.BsonDocument;
 import org.bson.BsonInt32;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.Objects;
 
 /**
@@ -25,11 +26,11 @@ import java.util.Objects;
  * <li><b>Constructor Injection (ADR-001):</b> Utilizes an explicit {@link Inject} constructor to guarantee
  *     deterministic bean wiring and AOP proxy reliability.</li>
  * <li><b>Proactive Connection Warm-Up:</b> Establishes database socket connectivity asynchronously via Project Reactor.</li>
- * <li><b>Telemetry & Observability:</b> Logs cluster topology discovery successes and critical connectivity failures.</li>
+ * <li><b>Structured Telemetry & Observability:</b> Emits latency metrics and standardized diagnostic markers for centralized logging.</li>
  * </ul>
  *
  * @author ThinkLab
- * @version 1.0.0
+ * @version 2.0.0
  * @since 1.0
  */
 @Singleton
@@ -51,7 +52,8 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
 
     /**
      * Intercepts the framework's StartupEvent to proactively initialize the MongoDB connection pool.
-     * Constructs a BSON ping command and dispatches it to the admin database via Project Reactor.
+     * Constructs a BSON ping command and dispatches it to the admin database via Project Reactor,
+     * measuring execution duration for telemetry insights.
      *
      * @param event The application startup event triggered by the IoC container. Must not be null.
      */
@@ -59,13 +61,23 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
     public void onApplicationEvent(StartupEvent event) {
         Objects.requireNonNull(event, "Application constraint violated: StartupEvent cannot be null.");
 
-        log.info("[MONGODB_WARMUP] - Initiating proactive SDAM topology discovery...");
+        log.info("[MONGODB_WARMUP] - Initiating proactive SDAM topology discovery component=mongodb status=INIT");
 
         BsonDocument pingCommand = new BsonDocument("ping", new BsonInt32(1));
+        long startTime = System.currentTimeMillis();
 
         Mono.from(mongoClient.getDatabase("admin").runCommand(pingCommand))
-                .doOnSuccess(result -> log.info("[MONGODB_WARMUP] - Telemetry established. State: UP. Payload: {}", result))
-                .doOnError(error -> log.error("[MONGODB_WARMUP] - CRITICAL: Topology discovery failed. Database unreachable: {}", error.getMessage(), error))
+                .timeout(Duration.ofSeconds(5))
+                .doOnSuccess(result -> {
+                    long duration = System.currentTimeMillis() - startTime;
+                    log.info("[MONGODB_WARMUP] - Telemetry established. component=mongodb status=UP duration_ms={} response={}",
+                            duration, result.toJson());
+                })
+                .doOnError(error -> {
+                    long duration = System.currentTimeMillis() - startTime;
+                    log.error("[MONGODB_WARMUP] - CRITICAL: Topology discovery failed. component=mongodb status=DOWN duration_ms={} error='{}'",
+                            duration, error.getMessage(), error);
+                })
                 .subscribe();
     }
 }
