@@ -140,7 +140,7 @@ public class HashTokenRepositoryAdapter implements HashTokenRepositoryPort {
 
         return repository.existsByTenantIdAndPayloadAndStatus(tenantId, payload, HashStatus.ACTIVE)
                 .defaultIfEmpty(false)
-                .doOnTrace(exists -> log.trace("[ACTION: EXISTS_TOKEN] [TENANT: {}] - Existence check result: {}", tenantId, exists));
+                .doOnNext(exists -> log.trace("[ACTION: EXISTS_TOKEN] [TENANT: {}] - Existence check result: {}", tenantId, exists));
     }
 
     /**

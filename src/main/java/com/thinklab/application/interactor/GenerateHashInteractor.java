@@ -3,7 +3,7 @@ package com.thinklab.application.interactor;
 import com.thinklab.application.usecase.command.GenerateHashCommand;
 import com.thinklab.application.port.out.HashAuditRepositoryPort;
 import com.thinklab.application.port.out.HashTokenRepositoryPort;
-import com.thinklab.domain.exception.BusinessException;
+import com.thinklab.domain.exception.DuplicateHashException;
 import com.thinklab.domain.model.HashAudit;
 import com.thinklab.domain.model.HashToken;
 import com.thinklab.application.port.in.GenerateHashUseCase;
@@ -91,7 +91,7 @@ public class GenerateHashInteractor implements GenerateHashUseCase {
                 .flatMap(exists -> {
                     if (exists) {
                         log.warn("[ACTION: GENERATE_HASH] [TENANT: {}] - Orchestration halted: Active hash already exists for this payload.", command.tenantId());
-                        return Mono.error(new BusinessException("ERR-HASH-00409",
+                        return Mono.error(new DuplicateHashException("ERR-HASH-00409",
                                 "An active cryptographic hash already exists for the provided tenant and payload context."));
                     }
                     return performGeneration(command);
@@ -133,7 +133,7 @@ public class GenerateHashInteractor implements GenerateHashUseCase {
                         .thenReturn(savedToken))
                 .doOnSuccess(token -> log.info("[ACTION: GENERATE_HASH] [ID: {}] [TENANT: {}] - Orchestration completed. Entity generated and forensic audit successfully persisted.", token.id(), command.tenantId()))
                 .doOnError(error -> {
-                    if (!(error instanceof BusinessException)) {
+                    if (!(error instanceof DuplicateHashException)) {
                         log.error("[ACTION: GENERATE_HASH] [TENANT: {}] - CRITICAL: Pipeline orchestration failed due to system exception: {}", command.tenantId(), error.getMessage(), error);
                     }
                 });

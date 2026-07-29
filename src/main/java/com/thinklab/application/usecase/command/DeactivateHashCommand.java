@@ -56,7 +56,7 @@ public record DeactivateHashCommand(
      * Acts as the final gatekeeper for data integrity, ensuring inputs are normalized and invalid states
      * are intercepted immediately.
      */
-    public Compact constructor {
+    public DeactivateHashCommand {
         Objects.requireNonNull(hashId, "Application constraint violated: hashId UUID cannot be null.");
         Objects.requireNonNull(executor, "Application constraint violated: executor cannot be null.");
         Objects.requireNonNull(reason, "Application constraint violated: reason cannot be null.");

@@ -2,7 +2,6 @@ package com.thinklab.infrastructure.adapter.out.mongo.entity;
 
 import com.thinklab.domain.model.HashAudit;
 import io.micronaut.core.annotation.Introspected;
-import io.micronaut.data.annotation.GeneratedValue;
 import io.micronaut.data.annotation.Id;
 import io.micronaut.data.annotation.Index;
 import io.micronaut.data.annotation.Indexes;
@@ -28,18 +27,19 @@ import java.util.UUID;
  * <li><b>Append-Only Forensic Integrity:</b> Enforces structural invariants to ensure the audit trail
  *     remains immutable and historically accurate post-persistence.</li>
  * <li><b>Identity Sovereignty (BSON Binary):</b> Utilizes {@link UUID} for primary keys, transaction IDs,
- *     and entity references, ensuring native BSON Binary (Subtype 4) storage optimization in MongoDB.</li>
+ *     and entity references, ensuring native BSON Binary (Subtype 4) storage optimization in MongoDB. Note that
+ *     the primary key is supplied directly by the domain layer to prevent Micronaut Data generation exceptions.</li>
  * <li><b>High-Performance Indexing:</b> Declares multi-dimensional indexes on transaction correlation IDs,
  *     tenant boundaries, entity identifiers, and timestamps for real-time forensic auditing queries.</li>
  * </ul>
  *
- * @param id         The globally unique primary identifier (stored as BSON Binary UUID).
+ * @param id         The globally unique primary identifier (stored as BSON Binary UUID). Supplied by domain to prevent generation errors.
  * @param txId       The reactive transaction correlation UUID.
  * @param tenantId   The strictly isolated tenant boundary owner.
  * @param entityId   The deterministic UUID of the targeted {@link com.thinklab.domain.model.HashToken}.
  * @param operation  The standardized business operation executed (e.g., "CREATION", "REVOCATION").
  * @param status     The definitive operational outcome (e.g., "SUCCESS").
- * @param executorId The verified agent who authorized the action.
+ * @param executor   The verified agent who authorized the action.
  * @param timestamp  The exact UTC instant the event materialized.
  * @param metadata   Rich contextual telemetry key-value pairs.
  *
@@ -53,13 +53,12 @@ import java.util.UUID;
         @Index(columns = {"txId"}),
         @Index(columns = {"tenantId"}),
         @Index(columns = {"entityId"}),
-        @Index(columns = {"executorId"}),
+        @Index(columns = {"executor"}),
         @Index(columns = {"timestamp"})
 })
 public record HashAuditEntity(
 
         @Id
-        @GeneratedValue
         UUID id,
 
         UUID txId,
@@ -72,7 +71,7 @@ public record HashAuditEntity(
 
         String status,
 
-        String executorId,
+        String executor,
 
         Instant timestamp,
 
@@ -95,7 +94,7 @@ public record HashAuditEntity(
         Objects.requireNonNull(entityId, "Persistence Invariant Violation: Entity ID cannot be null.");
         Objects.requireNonNull(operation, "Persistence Invariant Violation: Operation cannot be null.");
         Objects.requireNonNull(status, "Persistence Invariant Violation: Status cannot be null.");
-        Objects.requireNonNull(executorId, "Persistence Invariant Violation: Executor ID cannot be null.");
+        Objects.requireNonNull(executor, "Persistence Invariant Violation: Executor cannot be null.");
         Objects.requireNonNull(timestamp, "Persistence Invariant Violation: Timestamp cannot be null.");
 
         if (tenantId.isBlank()) {
@@ -107,7 +106,7 @@ public record HashAuditEntity(
         if (status.isBlank()) {
             throw new IllegalArgumentException("Persistence Invariant Violation: Status cannot be blank.");
         }
-        if (executorId.isBlank()) {
+        if (executor.isBlank()) {
             throw new IllegalArgumentException("Persistence Invariant Violation: Executor ID cannot be blank.");
         }
 
@@ -120,7 +119,7 @@ public record HashAuditEntity(
     /**
      * Factory method to map a pure Domain Audit model to this Persistence Entity.
      *
-     * @param domain The immutable {@link HashAudit} domain aggregate record.
+     * @param domain The immutable {@link HashAudit} domain aggregate record. Must not be null.
      * @return A mapped, strictly validated {@link HashAuditEntity} instance ready for MongoDB insertion.
      * @throws NullPointerException if the provided domain aggregate is null.
      */
@@ -153,7 +152,7 @@ public record HashAuditEntity(
                 entityId,
                 operation,
                 status,
-                executorId,
+                executor,
                 timestamp,
                 metadata
         );
