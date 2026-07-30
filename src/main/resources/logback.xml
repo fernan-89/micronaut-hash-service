@@ -68,7 +68,7 @@
     <!-- ISOLATED AUDIT LOGGER                                                                          -->
     <!-- Routes explicitly to the Asynchronous Audit File wrapper.                                      -->
     <!-- ============================================================================================== -->
-    <logger name="AUDIT_LOG" level="INFO" additivity="false">
+    <logger name="AUDIT_LOG" level="INFO" additivity="true">
         <appender-ref ref="ASYNC_AUDIT"/>
     </logger>
 
