@@ -30,7 +30,7 @@ import java.util.Objects;
  * </ul>
  *
  * @author ThinkLab
- * @version 2.0.0
+ * @version 2.1.0
  * @since 1.0
  */
 @Singleton
@@ -61,7 +61,7 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
     public void onApplicationEvent(StartupEvent event) {
         Objects.requireNonNull(event, "Application constraint violated: StartupEvent cannot be null.");
 
-        log.info("[MONGODB_WARMUP] - Initiating proactive SDAM topology discovery component=mongodb status=INIT");
+        log.info("[MONGODB_WARMUP] ➔ Initializing SDAM topology discovery... [component=mongodb | status=INIT]");
 
         BsonDocument pingCommand = new BsonDocument("ping", new BsonInt32(1));
         long startTime = System.currentTimeMillis();
@@ -70,12 +70,12 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
                 .timeout(Duration.ofSeconds(5))
                 .doOnSuccess(result -> {
                     long duration = System.currentTimeMillis() - startTime;
-                    log.info("[MONGODB_WARMUP] - Telemetry established. component=mongodb status=UP duration_ms={} response={}",
+                    log.info("[MONGODB_WARMUP] ✔ Telemetry established successfully. [component=mongodb | status=UP | latency={}ms | response={}]",
                             duration, result.toJson());
                 })
                 .doOnError(error -> {
                     long duration = System.currentTimeMillis() - startTime;
-                    log.error("[MONGODB_WARMUP] - CRITICAL: Topology discovery failed. component=mongodb status=DOWN duration_ms={} error='{}'",
+                    log.error("[MONGODB_WARMUP] ✖ CRITICAL: Topology discovery failed! [component=mongodb | status=DOWN | latency={}ms | cause='{}']",
                             duration, error.getMessage(), error);
                 })
                 .subscribe();

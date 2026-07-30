@@ -2,23 +2,21 @@
 <!-- ============================================================================================== -->
 <!-- /**                                                                                            -->
 <!--  * @file        logback.xml                                                                    -->
-<!--  * @module      Thinklab Infrastructure / Telemetry & Audit                                    -->
-<!--  * @description Centralized, high-throughput logging topology configuration.                    -->
-<!--  *              Implements non-blocking I/O via AsyncAppenders to ensure the reactive          -->
-<!--  *              event loop (Project Reactor / Netty) is never blocked by disk or console I/O.  -->
-<!--  *              Enforces robust plain-text rolling logs compatible with native log parsers.    -->
+<!--  * @module      Thinklab Infrastructure / Telemetry & Mission-Critical Audit                   -->
+<!--  * @description Ultra-high-throughput, non-blocking asynchronous logging topology.              -->
+<!--  *              Hardened for reactive event loops (Project Reactor/Netty) to guarantee zero     -->
+<!--  *              thread-blocking behavior under extreme peak loads and latency spikes.          -->
 <!--  *                                                                                             -->
-<!--  * @constraint  Console outputs utilize ANSI escape sequences for visual parsing.              -->
-<!--  *              File outputs enforce deterministic column formatting for SIEM ingestion.       -->
+<!--  * @constraint  Console outputs use ANSI escape sequences; files use strict plain-text.          -->
 <!--  * @maintainer  Thinklab Systems Engineering Team                                              -->
-<!--  * @version     2.1.1 (Standardized Encoder Edition)                                          -->
+<!--  * @version     3.0.0 (Mission-Critical Zero-Blocking Edition)                                 -->
 <!--  */                                                                                            -->
 <!-- ============================================================================================== -->
-<configuration>
+<configuration scan="false">
 
     <!-- ============================================================================================== -->
     <!-- [SYNCHRONOUS] CONSOLE APPENDER (HUMAN-READABLE)                                                -->
-    <!-- Physical sink for standard output. Utilizes traditional colored pattern for local debugging.   -->
+    <!-- Physical sink for standard output. Optimized pattern including thread context.                 -->
     <!-- ============================================================================================== -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
@@ -27,15 +25,15 @@
     </appender>
 
     <!-- ============================================================================================== -->
-    <!-- [SYNCHRONOUS] AUDIT FILE APPENDER (STANDARD PATTERN)                                           -->
-    <!-- Physical sink for disk writing. Uses standard PatternLayoutEncoder ensuring rock-solid         -->
-    <!-- compatibility without external dependencies while preserving all MDC key-value telemetry.      -->
+    <!-- [SYNCHRONOUS] AUDIT FILE APPENDER (ROLLING)                                                    -->
+    <!-- Physical sink for persistent storage with time-based rotation and historical bounds.           -->
     <!-- ============================================================================================== -->
     <appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>logs/audit.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>logs/audit.%d{yyyy-MM-dd}.log</fileNamePattern>
             <maxHistory>30</maxHistory>
+            <totalSizeCap>3GB</totalSizeCap>
         </rollingPolicy>
         <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%-20.20thread] %-5level %-40.40logger{39} - %msg%n</pattern>
@@ -43,38 +41,53 @@
     </appender>
 
     <!-- ============================================================================================== -->
-    <!-- [ASYNCHRONOUS] CONSOLE WRAPPER                                                                 -->
-    <!-- Disengages logging from the main application thread. Uses an in-memory queue.                  -->
+    <!-- [ASYNCHRONOUS] MISSION-CRITICAL CONSOLE WRAPPER                                                -->
+    <!-- Decouples logging from the main reactive event loop. Utilizes non-blocking push semantics.     -->
     <!-- ============================================================================================== -->
     <appender name="ASYNC_STDOUT" class="ch.qos.logback.classic.AsyncAppender">
         <appender-ref ref="STDOUT" />
-        <queueSize>512</queueSize>
+        <!-- Expanded queue size to absorb burst traffic safely (Power of 2 alignment) -->
+        <queueSize>2048</queueSize>
         <discardingThreshold>0</discardingThreshold>
         <includeCallerData>false</includeCallerData>
+        <!-- NASA-Grade Protection: Never block application threads if the queue saturates -->
+        <neverBlock>true</neverBlock>
+        <!-- Forces periodic queue flushing to prevent stale telemetry on sudden shutdowns -->
+        <maxFlushTime>1000</maxFlushTime>
     </appender>
 
     <!-- ============================================================================================== -->
-    <!-- [ASYNCHRONOUS] AUDIT FILE WRAPPER                                                              -->
-    <!-- Protects business event logging from degrading request latency during disk flush spikes.       -->
+    <!-- [ASYNCHRONOUS] MISSION-CRITICAL AUDIT FILE WRAPPER                                             -->
+    <!-- Protects disk I/O bottlenecks from degrading transaction latencies.                            -->
     <!-- ============================================================================================== -->
     <appender name="ASYNC_AUDIT" class="ch.qos.logback.classic.AsyncAppender">
         <appender-ref ref="AUDIT_FILE" />
-        <queueSize>512</queueSize>
+        <queueSize>2048</queueSize>
         <discardingThreshold>0</discardingThreshold>
         <includeCallerData>false</includeCallerData>
+        <neverBlock>true</neverBlock>
+        <maxFlushTime>1000</maxFlushTime>
     </appender>
 
     <!-- ============================================================================================== -->
-    <!-- ISOLATED AUDIT LOGGER                                                                          -->
-    <!-- Routes explicitly to the Asynchronous Audit File wrapper.                                      -->
+    <!-- ISOLATED AUDIT LOGGER (STRICT ENCAPSULATION)                                                   -->
+    <!-- additivity="false" prevents duplicate event propagation into the root console stream.          -->
     <!-- ============================================================================================== -->
-    <logger name="AUDIT_LOG" level="INFO" additivity="true">
+    <logger name="AUDIT_LOG" level="INFO" additivity="false">
         <appender-ref ref="ASYNC_AUDIT"/>
     </logger>
 
     <!-- ============================================================================================== -->
+    <!-- THIRD-PARTY NOISE REDUCTION (SILENCERS)                                                        -->
+    <!-- Suppresses verbose cluster topology discovery chatter from external database drivers.          -->
+    <!-- ============================================================================================== -->
+    <logger name="org.mongodb.driver.cluster" level="WARN"/>
+    <logger name="org.mongodb.driver.client" level="WARN"/>
+    <logger name="org.mongodb.driver.connection" level="WARN"/>
+
+    <!-- ============================================================================================== -->
     <!-- ROOT LOGGER SINK                                                                               -->
-    <!-- All default framework and application logs are routed through the Asynchronous Console.        -->
+    <!-- Global fallback routing for all framework and library events.                                  -->
     <!-- ============================================================================================== -->
     <root level="INFO">
         <appender-ref ref="ASYNC_STDOUT"/>
