@@ -3,9 +3,9 @@
 //  * @file        build.gradle
 //  * @module      Thinklab Hash Service Build Manifest (Groovy DSL)
 //  * @description Comprehensive build lifecycle orchestration. This manifest defines
-//  * compilation phases, dependency resolution, Abstract Syntax Tree (AST)
-//  * manipulation (Lombok/Micronaut Processors), Ahead-of-Time (AOT) optimizations,
-//  * and Fat JAR packaging. Adheres to strict Zero-Trust and deterministic build protocols.
+//  *              compilation phases, dependency resolution, Abstract Syntax Tree (AST)
+//  *              manipulation, Ahead-of-Time (AOT) optimizations, and Fat JAR packaging.
+//  *              Adheres to strict Zero-Trust, reproducible builds, and deterministic protocols.
 //  *
 //  * @maintainer  Thinklab Systems Engineering Team
 //  * @java_target JDK 21 (LTS) - Virtual Threads & Pattern Matching enabled
@@ -14,94 +14,12 @@
 
 plugins {
     id 'io.micronaut.application' version '4.4.2'
-    id 'io.micronaut.aot' version '4.4.2'
-    id 'com.gradleup.shadow' version '8.3.0'
+    id 'io.micronaut.aot'         version '4.4.2'
+    id 'com.gradleup.shadow'      version '8.3.0'
 }
 
+group   = 'com.thinklab'
 version = '0.1'
-group = 'com.thinklab'
-
-repositories {
-    mavenCentral()
-}
-
-dependencies {
-    // -------------------------------------------------------------------------
-    // /**
-    //  * @layer AST Manipulation & Compile-time Processors
-    //  * @note  ORDER IS CRITICAL. Lombok must run first to synthesize getters/setters/constructors
-    //  * before Micronaut's processors attempt to read the class metadata for DI and SerDes.
-    //  */
-    // -------------------------------------------------------------------------
-    annotationProcessor 'org.projectlombok:lombok:1.18.36'
-    compileOnly 'org.projectlombok:lombok:1.18.36'
-
-    annotationProcessor 'io.micronaut:micronaut-http-validation'
-    annotationProcessor 'io.micronaut.serde:micronaut-serde-processor'
-    annotationProcessor 'io.micronaut.validation:micronaut-validation-processor'
-    annotationProcessor 'io.micronaut.data:micronaut-data-document-processor'
-    annotationProcessor 'io.micronaut.openapi:micronaut-openapi'
-
-    // -------------------------------------------------------------------------
-    // /**
-    //  * @layer Core Application & Management
-    //  */
-    // -------------------------------------------------------------------------
-    implementation 'io.micronaut:micronaut-management'
-    implementation 'io.micronaut:micronaut-http-client'
-    implementation 'io.micronaut.serde:micronaut-serde-jackson'
-    implementation 'io.micronaut.validation:micronaut-validation'
-    implementation 'io.swagger.core.v3:swagger-annotations'
-
-
-    // -------------------------------------------------------------------------
-    // /**
-    //  Logstash Logback Encoder para suporte a JSON estruturado
-    //  */
-    // -------------------------------------------------------------------------
-    implementation("net.logstash.logback:logstash-logback-encoder:7.4")
-
-    // -------------------------------------------------------------------------
-    // /**
-    //  * @layer Infrastructure & Data Persistence (Reactive Paradigm)
-    //  */
-    // -------------------------------------------------------------------------
-    implementation 'io.projectreactor:reactor-core'
-    implementation 'io.micronaut.data:micronaut-data-mongodb'
-    implementation 'io.micronaut.mongodb:micronaut-mongo-reactive'
-    implementation 'org.mongodb:mongodb-driver-reactivestreams'
-
-    // -------------------------------------------------------------------------
-    // /**
-    //  * @layer Cryptography & Security
-    //  */
-    // -------------------------------------------------------------------------
-    implementation 'org.bouncycastle:bcprov-jdk18on:1.84'
-
-    // -------------------------------------------------------------------------
-    // /**
-    //  * @layer Logging & Runtime Bootstrapping
-    //  */
-    // -------------------------------------------------------------------------
-    runtimeOnly 'ch.qos.logback:logback-classic'
-    runtimeOnly 'org.yaml:snakeyaml'
-
-    // -------------------------------------------------------------------------
-    // /**
-    //  * @layer Quality Assurance & Unit Testing
-    //  */
-    // -------------------------------------------------------------------------
-    testImplementation 'io.micronaut:micronaut-http-client'
-    testImplementation 'io.projectreactor:reactor-test'
-    testImplementation 'org.mockito:mockito-core'
-    testImplementation 'org.mockito:mockito-junit-jupiter'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-
-}
-
-application {
-    mainClass = 'com.thinklab.Application'
-}
 
 java {
     toolchain {
@@ -109,16 +27,152 @@ java {
     }
 }
 
-// -------------------------------------------------------------------------
+application {
+    mainClass = 'com.thinklab.Application'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // ------------------------------------------------------------------------------------------
+    // /**
+    //  * @layer       AST Manipulation & Compile-time Processors
+    //  * @description Synthesizes boilerplate and generates Micronaut DI/SerDes metadata.
+    //  * @note        ORDER IS CRITICAL: Lombok must run before Micronaut processors.
+    //  */
+    // ------------------------------------------------------------------------------------------
+    annotationProcessor    'org.projectlombok:lombok:1.18.36'
+    compileOnly            'org.projectlombok:lombok:1.18.36'
+
+    annotationProcessor    'io.micronaut:micronaut-http-validation'
+    annotationProcessor    'io.micronaut.serde:micronaut-serde-processor'
+    annotationProcessor    'io.micronaut.validation:micronaut-validation-processor'
+    annotationProcessor    'io.micronaut.data:micronaut-data-document-processor'
+    annotationProcessor    'io.micronaut.openapi:micronaut-openapi'
+
+    // ------------------------------------------------------------------------------------------
+    // /**
+    //  * @layer       Core Application & Management
+    //  * @description Foundational framework components, HTTP clients, and validation.
+    //  */
+    // ------------------------------------------------------------------------------------------
+    implementation         'io.micronaut:micronaut-management'
+    implementation         'io.micronaut:micronaut-http-client'
+    implementation         'io.micronaut.serde:micronaut-serde-jackson'
+    implementation         'io.micronaut.validation:micronaut-validation'
+    implementation         'io.swagger.core.v3:swagger-annotations'
+
+    // ------------------------------------------------------------------------------------------
+    // /**
+    //  * @layer       Observability & Structured Logging
+    //  * @description JSON-formatted log emission and runtime bootstrapping.
+    //  * @note        Logstash requires standard jackson-databind to serialize events.
+    //  */
+    // ------------------------------------------------------------------------------------------
+    runtimeOnly             ("net.logstash.logback:logstash-logback-encoder:7.4")
+    runtimeOnly            'com.fasterxml.jackson.core:jackson-databind'
+    runtimeOnly            'ch.qos.logback:logback-classic'
+    runtimeOnly            'org.yaml:snakeyaml'
+
+    // ------------------------------------------------------------------------------------------
+    // /**
+    //  * @layer       Infrastructure & Data Persistence (Reactive)
+    //  * @description Non-blocking MongoDB drivers and Project Reactor core.
+    //  */
+    // ------------------------------------------------------------------------------------------
+    implementation         'io.projectreactor:reactor-core'
+    implementation         'io.micronaut.data:micronaut-data-mongodb'
+    implementation         'io.micronaut.mongodb:micronaut-mongo-reactive'
+    implementation         'org.mongodb:mongodb-driver-reactivestreams'
+
+    // ------------------------------------------------------------------------------------------
+    // /**
+    //  * @layer       Cryptography & Security
+    //  * @description Cryptographic primitives and zero-trust policy enforcements.
+    //  */
+    // ------------------------------------------------------------------------------------------
+    implementation         'org.bouncycastle:bcprov-jdk18on:1.85'
+
+    // ------------------------------------------------------------------------------------------
+    // /**
+    //  * @layer       Quality Assurance & Unit Testing
+    //  * @description Test harnesses, mocking frameworks, and JUnit 5 launchers.
+    //  */
+    // ------------------------------------------------------------------------------------------
+    testImplementation     'io.micronaut:micronaut-http-client'
+    testImplementation     'io.projectreactor:reactor-test'
+    testImplementation     'org.mockito:mockito-core'
+    testImplementation     'org.mockito:mockito-junit-jupiter'
+    testRuntimeOnly        'org.junit.platform:junit-platform-launcher'
+}
+
+// ==============================================================================================
 // /**
-//  * @directive Compilation Telemetry (Swagger UI Generation)
+//  * @directive   Compiler Options & Telemetry
+//  * @description Enforces strict compilation rules (UTF-8, warnings) and injects JVM
+//  *              arguments for OpenAPI/Swagger UI generation.
 //  */
-// -------------------------------------------------------------------------
-tasks.withType(JavaCompile) {
+// ==============================================================================================
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+    options.compilerArgs << '-parameters' << '-Xlint:unchecked' << '-Xlint:deprecation'
     options.fork = true
     options.forkOptions.jvmArgs << '-Dmicronaut.openapi.views.spec=swagger-ui.enabled=true,swagger-ui.theme=flattop'
 }
 
+// ==============================================================================================
+// /**
+//  * @directive   Fat JAR Security & Packaging Optimization (Shadow Plugin)
+//  * @description Merges service files safely. CRITICAL: Strips cryptographic signature files
+//  *              (.RSA, .DSA, .SF) inherited from third-party JARs (like BouncyCastle)
+//  *              to prevent JVM SecurityExceptions at runtime.
+//  */
+// ==============================================================================================
+tasks.named("shadowJar") {
+    mergeServiceFiles()
+    exclude 'META-INF/*.DSA', 'META-INF/*.RSA', 'META-INF/*.SF'
+    exclude 'META-INF/INDEX.LIST'
+}
+
+// ==============================================================================================
+// /**
+//  * @directive   Cloud-Native Reproducible Builds
+//  * @description Strips volatile timestamps and enforces deterministic file ordering within
+//  *              archives. Guarantees bit-for-bit identical JARs to maximize Docker
+//  *              layer cache hits in CI/CD pipelines.
+//  */
+// ==============================================================================================
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+// ==============================================================================================
+// /**
+//  * @directive   CI/CD Test Execution Strategy
+//  * @description Optimizes test runs for headless environments. Enables fail-fast semantics
+//  *              and dynamic parallel execution based on available CPU cores.
+//  */
+// ==============================================================================================
+tasks.named('test') {
+    useJUnitPlatform()
+    failFast = true // Aborts immediately on first failure (saves CI minutes)
+    maxParallelForks = (Runtime.runtime.availableProcessors().intdiv(2) ?: 1)
+
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat 'full'
+    }
+}
+
+// ==============================================================================================
+// /**
+//  * @directive   GraalVM Native Image
+//  * @description Defines native binary compilation arguments and memory boundaries.
+//  */
+// ==============================================================================================
 graalvmNative {
     toolchainDetection = false
     binaries {
@@ -128,26 +182,32 @@ graalvmNative {
     }
 }
 
-// -------------------------------------------------------------------------
+// ==============================================================================================
 // /**
-//  * @directive Ahead-of-Time (AOT) Compilation Constraints
+//  * @directive   Ahead-of-Time (AOT) Config & Micronaut Engine
+//  * @description Fine-tunes compile-time initializations to reduce startup latency.
 //  */
-// -------------------------------------------------------------------------
+// ==============================================================================================
 micronaut {
-    runtime('netty')
-    testRuntime('junit5')
+    version "4.4.2"
+    runtime("netty")
+    testRuntime("junit5")
+
     processing {
         incremental(true)
-        annotations('com.thinklab.*')
+        annotations("com.thinklab.*")
     }
+
     aot {
         optimizeServiceLoading = false
-        convertYamlToJava = false
-        precomputeOperations = true
-        cacheEnvironment = true
-        optimizeClassLoading = true
-        deduceEnvironment = true
-        optimizeNetty = true
-        replaceLogbackXml = true
+        convertYamlToJava      = false
+        precomputeOperations   = true
+        cacheEnvironment       = true
+        optimizeClassLoading   = true
+        deduceEnvironment      = true
+        optimizeNetty          = true
+
+        // CRITICAL: Must be false to prevent AOT parser from breaking Logstash <encoder> tags
+        replaceLogbackXml      = false
     }
 }

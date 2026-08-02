@@ -4,9 +4,10 @@
 #  * @module      Container Image Build Manifest
 #  * @description Multi-stage Docker build pipeline for Java/Micronaut microservices.
 #  *              Optimized for minimal footprint, strict security (Zero-Trust distroless),
-#  *              and optimal layer caching.
+#  *              and optimal BuildKit layer caching.
 #  *
-#  * @maintainer  Platform Engineering Team
+#  * @maintainer  Thinklab Systems Engineering Team
+#  * @target      Production (Mission-Critical NASA-Level Standard)
 #  */
 # ==============================================================================================
 
@@ -14,7 +15,7 @@
 # /**
 #  * @section     Stage 1: Build & Compilation
 #  * @description Leverages the official Gradle image with JDK 21 to compile source code.
-#  *              Implements aggressive layer caching for dependency resolution.
+#  *              Implements BuildKit cache mounts for lightning-fast CI/CD pipeline executions.
 #  */
 # ----------------------------------------------------------------------------------------------
 FROM gradle:8-jdk21-jammy AS builder
@@ -23,19 +24,16 @@ FROM gradle:8-jdk21-jammy AS builder
 WORKDIR /home/gradle/src
 
 # 1. CACHE OPTIMIZATION: Copy ONLY dependency manifests first.
-# This layer is cached and only rebuilt if the build.gradle file changes.
 COPY --chown=gradle:gradle build.gradle settings.gradle* gradle.properties ./
 
-# Resolve and download dependencies (stored in Docker build cache)
-# Note: The '|| true' allows it to fail gracefully if no source code is present yet
-RUN gradle dependencies --no-daemon || true
-
 # 2. SOURCE COMPILATION: Copy the actual source code.
-# This layer rebuilds frequently during development, but skips dependency downloads.
 COPY --chown=gradle:gradle src/ src/
 
-# Execute the shadowJar task to bundle the application and all dependencies
-RUN gradle shadowJar --no-daemon
+# Execute the shadowJar task utilizing Docker BuildKit caching for Gradle.
+# This prevents re-downloading the internet on every build by mounting a persistent CI cache.
+RUN --mount=type=cache,target=/home/gradle/.gradle/caches \
+    --mount=type=cache,target=/home/gradle/.gradle/wrapper \
+    gradle shadowJar --no-daemon --parallel
 
 # ----------------------------------------------------------------------------------------------
 # /**
@@ -58,17 +56,29 @@ USER nonroot:nonroot
 # Set the application execution directory
 WORKDIR /app
 
-# Copy only the bundled 'all' JAR from the builder stage
-COPY --from=builder /home/gradle/src/build/libs/*-all.jar app.jar
+# ----------------------------------------------------------------------------------------------
+# /**
+#  * @subsection  Application Binary
+#  * @description Copies the Fat JAR from the builder stage.
+#  * @security    Enforces strict read-only permissions (chmod 444) to prevent binary
+#  *              tampering in the event of an RCE (Remote Code Execution) vulnerability.
+#  */
+# ----------------------------------------------------------------------------------------------
+COPY --from=builder --chown=nonroot:nonroot --chmod=444 /home/gradle/src/build/libs/*-all.jar app.jar
 
 # ----------------------------------------------------------------------------------------------
 # /**
 #  * @subsection  Environment & Telemetry Variables
-#  * @description JAVA_TOOL_OPTIONS is automatically picked up by the JVM without needing a
-#  *              shell wrapper. Static memory limits kept per engineering request.
+#  * @description Tuned for Kubernetes lifecycle, reactive Netty, and consistent telemetry.
+#  *              Static memory limits kept per engineering request (-Xmx256m).
+#  *
+#  * @tuning      -XX:+ExitOnOutOfMemoryError: Kills JVM instantly on memory starvation,
+#  *               allowing Kubernetes to fail-fast and restart the pod (Zero-Zombie state).
+#  *              -Duser.timezone=UTC: Mandated for distributed log consistency.
+#  *              -Djava.awt.headless=true: Saves memory by avoiding UI resource allocations.
 #  */
 # ----------------------------------------------------------------------------------------------
-ENV JAVA_TOOL_OPTIONS="-Xmx256m -XX:+UseContainerSupport"
+ENV JAVA_TOOL_OPTIONS="-Xmx256m -XX:+UseContainerSupport -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true -Duser.timezone=UTC"
 ENV MONGODB_URI="mongodb://localhost:27017/default_db_local"
 ENV MICRONAUT_SERVER_PORT=8080
 

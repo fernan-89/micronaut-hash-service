@@ -13,11 +13,13 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -42,7 +44,7 @@ import java.util.Objects;
  * </ul>
  *
  * @author ThinkLab
- * @version 1.2.0
+ * @version 1.4.0
  * @since 1.0
  */
 @Singleton
@@ -50,6 +52,14 @@ import java.util.Objects;
 public class ExternalEndpointsHealthIndicator implements HealthIndicator, ApplicationEventListener<StartupEvent> {
 
     private final Map<String, String> targetEndpoints;
+    private final String infrastructureHostname;
+
+    /**
+     * The resolved IPv4/IPv6 address of the underlying infrastructure node.
+     * Cached immutably at startup to prevent blocking network I/O operations
+     * during high-frequency runtime health evaluations.
+     */
+    private final String infrastructureIpAddress;
 
     /**
      * Pre-configured, reusable native HTTP client.
@@ -70,10 +80,13 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
             @Property(name = "warmup.endpoints") Map<String, String> targetEndpoints
     ) {
         this.targetEndpoints = targetEndpoints;
+        this.infrastructureHostname = resolveHostname();
+        this.infrastructureIpAddress = resolveIpAddress();
     }
 
     /**
      * Intercepts the framework's StartupEvent to proactively initialize network paths.
+     * Generates structured telemetry logs identifying the current node's host and IP footprint.
      *
      * @param event The application startup event triggered by the IoC container. Must not be null.
      */
@@ -86,6 +99,9 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
             return;
         }
 
+        // Distinct log entries for high-visibility infrastructure footprint tracing
+        log.info("[EXTERNAL_HEALTH_WARMUP] - Hostname: [{}]", infrastructureHostname);
+        log.info("[EXTERNAL_HEALTH_WARMUP] - IP Address: [{}]", infrastructureIpAddress);
         log.info("[EXTERNAL_HEALTH_WARMUP] - Initiating proactive warmup for {} external dependencies...", targetEndpoints.size());
 
         Flux.fromIterable(targetEndpoints.entrySet())
@@ -107,7 +123,11 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
         if (targetEndpoints == null || targetEndpoints.isEmpty()) {
             return Mono.just(HealthResult.builder("external-endpoints")
                     .status(HealthStatus.UP)
-                    .details("No external endpoints configured for telemetry.")
+                    .details(Map.of(
+                            "message", "No external endpoints configured for telemetry.",
+                            "resolvedHostname", infrastructureHostname,
+                            "resolvedIpAddress", infrastructureIpAddress
+                    ))
                     .build());
         }
 
@@ -121,9 +141,14 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
 
                     HealthStatus aggregatedStatus = hasFailures ? HealthStatus.DOWN : HealthStatus.UP;
 
+                    // Create a mutable copy of details to append metadata without side-effects
+                    Map<String, Object> responseTopology = new HashMap<>(details);
+                    responseTopology.put("resolvedHostname", infrastructureHostname);
+                    responseTopology.put("resolvedIpAddress", infrastructureIpAddress);
+
                     return HealthResult.builder("external-endpoints")
                             .status(aggregatedStatus)
-                            .details(details)
+                            .details(responseTopology)
                             .build();
                 });
     }
@@ -158,5 +183,48 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
                     log.debug("[EXTERNAL_HEALTH_PROBE] - Diagnostic failure for [{}] ({}) - Reason: {}", alias, url, error.getMessage());
                     return Mono.just((Map.Entry<String, String>) Map.entry(alias, "DOWN (" + error.getMessage() + ")"));
                 });
+    }
+
+    /**
+     * Resolves the current execution environment hostname using OS parameters or network interfaces.
+     * Fails gracefully to ensure the application starts even in strictly constrained container meshes.
+     *
+     * @return String containing the resolved hostname or alternative diagnostic string.
+     */
+    private String resolveHostname() {
+        String envHost = System.getenv("HOSTNAME");
+        if (envHost != null && !envHost.isBlank()) {
+            return envHost;
+        }
+
+        String winHost = System.getenv("COMPUTERNAME");
+        if (winHost != null && !winHost.isBlank()) {
+            return winHost;
+        }
+
+        try {
+            return InetAddress.getLocalHost().getHostName();
+        } catch (Exception e) {
+            log.warn("[HEALTH_INIT] - Failed to resolve local network hostname. Falling back to unknown.", e);
+            return "unknown-host";
+        }
+    }
+
+    /**
+     * Resolves the current execution environment IP address bound to the local network interface.
+     *
+     * <p>Utilizes {@link InetAddress#getLocalHost()} to extract the primary routed IP.
+     * Fails gracefully to a placeholder string to ensure orchestration systems (e.g., Kubernetes)
+     * do not kill the pod during initialization if network interfaces are not fully ready.
+     *
+     * @return String containing the resolved IP address or alternative diagnostic string.
+     */
+    private String resolveIpAddress() {
+        try {
+            return InetAddress.getLocalHost().getHostAddress();
+        } catch (Exception e) {
+            log.warn("[HEALTH_INIT] - Failed to resolve local network IP address. Falling back to unknown.", e);
+            return "unknown-ip";
+        }
     }
 }

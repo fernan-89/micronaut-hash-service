@@ -1,6 +1,7 @@
 package com.thinklab.infrastructure.health;
 
 import com.mongodb.reactivestreams.client.MongoClient;
+import io.micronaut.context.annotation.Property;
 import io.micronaut.context.event.ApplicationEventListener;
 import io.micronaut.context.event.StartupEvent;
 import jakarta.inject.Inject;
@@ -21,6 +22,12 @@ import java.util.Objects;
  * Server Discovery and Monitoring (SDAM) mechanism to resolve the cluster topology before Kubernetes
  * Readiness Probes poll the health endpoint. This eliminates transient 'UNKNOWN' states and cold-start latency.
  *
+ * <p>Furthermore, it implements a Two-Phase Verification approach:
+ * <ol>
+ * <li><b>Cluster Health:</b> Validates global connectivity via the 'admin' database.</li>
+ * <li><b>Application Context:</b> Verifies RBAC and connectivity against the specific application database.</li>
+ * </ol>
+ *
  * <p><b>Contractual Obligations:</b>
  * <ul>
  * <li><b>Constructor Injection (ADR-001):</b> Utilizes an explicit {@link Inject} constructor to guarantee
@@ -30,7 +37,7 @@ import java.util.Objects;
  * </ul>
  *
  * @author ThinkLab
- * @version 2.1.0
+ * @version 2.2.0
  * @since 1.0
  */
 @Singleton
@@ -38,22 +45,29 @@ import java.util.Objects;
 public class MongoWarmupObserver implements ApplicationEventListener<StartupEvent> {
 
     private final MongoClient mongoClient;
+    private final String applicationDatabase;
 
     /**
-     * Explicit constructor for strict dependency injection (ADR-001).
+     * Explicit constructor for strict dependency injection (ADR-001) and property binding.
      *
-     * @param mongoClient The reactive MongoDB client driver instance. Must not be null.
+     * @param mongoClient         The reactive MongoDB client driver instance. Must not be null.
+     * @param applicationDatabase The logical name of the application's target database.
+     *                            Defaults to 'unknown' if missing to prevent startup crash, but will fail the probe.
      * @throws NullPointerException if the mongoClient is null.
      */
     @Inject
-    public MongoWarmupObserver(MongoClient mongoClient) {
+    public MongoWarmupObserver(
+            MongoClient mongoClient,
+            @Property(name = "mongodb.database", defaultValue = "unknown") String applicationDatabase
+    ) {
         this.mongoClient = Objects.requireNonNull(mongoClient, "Application constraint violated: MongoClient cannot be null.");
+        this.applicationDatabase = applicationDatabase;
     }
 
     /**
      * Intercepts the framework's StartupEvent to proactively initialize the MongoDB connection pool.
-     * Constructs a BSON ping command and dispatches it to the admin database via Project Reactor,
-     * measuring execution duration for telemetry insights.
+     * Constructs a BSON ping command and dispatches it sequentially: first to the admin database
+     * to warm up SDAM, then to the application database to verify contextual access.
      *
      * @param event The application startup event triggered by the IoC container. Must not be null.
      */
@@ -66,17 +80,21 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
         BsonDocument pingCommand = new BsonDocument("ping", new BsonInt32(1));
         long startTime = System.currentTimeMillis();
 
+        // Phase 1: Cluster Warmup via Admin DB
         Mono.from(mongoClient.getDatabase("admin").runCommand(pingCommand))
+                .doOnSuccess(adminRes -> log.debug("[MONGODB_WARMUP] ✔ Cluster connectivity verified. Checking application database: [{}]", applicationDatabase))
+                // Phase 2: Contextual verification via Application DB
+                .flatMap(adminRes -> Mono.from(mongoClient.getDatabase(applicationDatabase).runCommand(pingCommand)))
                 .timeout(Duration.ofSeconds(5))
-                .doOnSuccess(result -> {
+                .doOnSuccess(appResult -> {
                     long duration = System.currentTimeMillis() - startTime;
-                    log.info("[MONGODB_WARMUP] ✔ Telemetry established successfully. [component=mongodb | status=UP | latency={}ms | response={}]",
-                            duration, result.toJson());
+                    log.info("[MONGODB_WARMUP] ✔ Telemetry established successfully. [component=mongodb | status=UP | targetDatabase={} | latency={}ms | response={}]",
+                            applicationDatabase, duration, appResult.toJson());
                 })
                 .doOnError(error -> {
                     long duration = System.currentTimeMillis() - startTime;
-                    log.error("[MONGODB_WARMUP] ✖ CRITICAL: Topology discovery failed! [component=mongodb | status=DOWN | latency={}ms | cause='{}']",
-                            duration, error.getMessage(), error);
+                    log.error("[MONGODB_WARMUP] ✖ CRITICAL: Topology discovery or Database access failed! [component=mongodb | status=DOWN | targetDatabase={} | latency={}ms | cause='{}']",
+                            applicationDatabase, duration, error.getMessage(), error);
                 })
                 .subscribe();
     }

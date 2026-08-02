@@ -58,7 +58,6 @@ The suite follows the automated test pyramid to ensure absolute reliability acro
 
 ### Infrastructure and API Endpoints
 * Health and Readiness: http://localhost:8080/health
-* Metrics (Prometheus): http://localhost:8080/prometheus
 * Swagger UI: http://localhost:8080/swagger/views/swagger-ui
 * OpenAPI Specs: http://localhost:8080/swagger/thinklab-hash-service-1.0.0.yml
 

@@ -2,41 +2,55 @@
 <!-- ============================================================================================== -->
 <!-- /**                                                                                            -->
 <!--  * @file        logback.xml                                                                    -->
-<!--  * @module      Thinklab Infrastructure / Telemetry & Mission-Critical Audit                   -->
+<!--  * @module      Thinklab Infrastructure / Hash Service & Forensic Audit                        -->
 <!--  * @description Ultra-high-throughput, non-blocking asynchronous logging topology.              -->
 <!--  *              Hardened for reactive event loops (Project Reactor/Netty) to guarantee zero     -->
 <!--  *              thread-blocking behavior under extreme peak loads and latency spikes.          -->
 <!--  *                                                                                             -->
-<!--  * @constraint  Console outputs use ANSI escape sequences; files use strict plain-text.          -->
+<!--  * @constraint  Console outputs use ANSI escape sequences with MDC traceId injection;            -->
+<!--  *              Files use strict JSON structuring (LogstashEncoder) for forensic analysis.     -->
 <!--  * @maintainer  Thinklab Systems Engineering Team                                              -->
-<!--  * @version     3.0.0 (Mission-Critical Zero-Blocking Edition)                                 -->
+<!--  * @version     3.1.0 (Mission-Critical Zero-Blocking Edition + I/O Optimized)                 -->
 <!--  */                                                                                            -->
 <!-- ============================================================================================== -->
 <configuration scan="false">
 
     <!-- ============================================================================================== -->
+    <!-- GRACEFUL SHUTDOWN HOOK                                                                         -->
+    <!-- Garante que as filas assíncronas sejam esvaziadas no disco antes do término da JVM,            -->
+    <!-- prevenindo perda de logs (telemetria fantasma) durante re-deploys ou crashes.                  -->
+    <!-- ============================================================================================== -->
+    <shutdownHook class="ch.qos.logback.core.hook.DelayingShutdownHook"/>
+
+    <!-- ============================================================================================== -->
     <!-- [SYNCHRONOUS] CONSOLE APPENDER (HUMAN-READABLE)                                                -->
-    <!-- Physical sink for standard output. Optimized pattern including thread context.                 -->
+    <!-- Physical sink for standard output. Optimized pattern including thread context and MDC traceId. -->
     <!-- ============================================================================================== -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%cyan(%d{HH:mm:ss.SSS}) %gray([%-20.20thread]) %highlight(%-5level) %magenta(%-40.40logger{39}) - %msg%n</pattern>
+            <pattern>%cyan(%d{HH:mm:ss.SSS}) %gray([%-15.15thread]) %highlight(%-5level) %magenta(%-30.30logger{29}) %yellow([trace=%mdc{traceId:-NONE}]) - %msg%n</pattern>
         </encoder>
     </appender>
 
     <!-- ============================================================================================== -->
-    <!-- [SYNCHRONOUS] AUDIT FILE APPENDER (ROLLING)                                                    -->
+    <!-- [SYNCHRONOUS] AUDIT FILE APPENDER (ROLLING & STRUCTURED JSON)                                  -->
     <!-- Physical sink for persistent storage with time-based rotation and historical bounds.           -->
+    <!-- Emits strictly structured JSON (Logstash format) enriched with domain and service metadata.    -->
     <!-- ============================================================================================== -->
     <appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>logs/audit.log</file>
+
+        <!-- DESATIVA O FLUSH IMEDIATO: Faz escritas em lote (batching) no SO, maximizando o throughput de I/O -->
+        <immediateFlush>false</immediateFlush>
+
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>logs/audit.%d{yyyy-MM-dd}.log</fileNamePattern>
             <maxHistory>30</maxHistory>
             <totalSizeCap>3GB</totalSizeCap>
         </rollingPolicy>
-        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%-20.20thread] %-5level %-40.40logger{39} - %msg%n</pattern>
+
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"service":"thinklab-hash-service","domain":"forensic-audit"}</customFields>
         </encoder>
     </appender>
 
@@ -48,7 +62,8 @@
         <appender-ref ref="STDOUT" />
         <!-- Expanded queue size to absorb burst traffic safely (Power of 2 alignment) -->
         <queueSize>2048</queueSize>
-        <discardingThreshold>0</discardingThreshold>
+        <!-- Reserva os últimos ~20% da fila exclusivamente para WARN e ERROR. Evita perda de erros em picos. -->
+        <discardingThreshold>400</discardingThreshold>
         <includeCallerData>false</includeCallerData>
         <!-- NASA-Grade Protection: Never block application threads if the queue saturates -->
         <neverBlock>true</neverBlock>
@@ -63,7 +78,7 @@
     <appender name="ASYNC_AUDIT" class="ch.qos.logback.classic.AsyncAppender">
         <appender-ref ref="AUDIT_FILE" />
         <queueSize>2048</queueSize>
-        <discardingThreshold>0</discardingThreshold>
+        <discardingThreshold>400</discardingThreshold>
         <includeCallerData>false</includeCallerData>
         <neverBlock>true</neverBlock>
         <maxFlushTime>1000</maxFlushTime>
@@ -79,11 +94,16 @@
 
     <!-- ============================================================================================== -->
     <!-- THIRD-PARTY NOISE REDUCTION (SILENCERS)                                                        -->
-    <!-- Suppresses verbose cluster topology discovery chatter from external database drivers.          -->
+    <!-- Suppresses verbose discovery/IO chatter from external drivers and reactive networking.         -->
     <!-- ============================================================================================== -->
+    <!-- MongoDB Drivers -->
     <logger name="org.mongodb.driver.cluster" level="WARN"/>
     <logger name="org.mongodb.driver.client" level="WARN"/>
     <logger name="org.mongodb.driver.connection" level="WARN"/>
+
+    <!-- Reactive Networking (Netty/Reactor) -->
+    <logger name="io.netty" level="WARN"/>
+    <logger name="reactor.netty" level="WARN"/>
 
     <!-- ============================================================================================== -->
     <!-- ROOT LOGGER SINK                                                                               -->
