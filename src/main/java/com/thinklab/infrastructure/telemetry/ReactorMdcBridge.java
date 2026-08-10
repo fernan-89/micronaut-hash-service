@@ -15,9 +15,10 @@ import reactor.util.context.Context;
  * thread-local Mapped Diagnostic Context ({@code MDC}) across asynchronous execution and thread boundaries
  * (e.g., from Netty event loops to worker thread pools like {@code andler-executor}).
  *
- * <p><b>Telemetry Continuity (ADR-003):</b>
+ * <p><b>Telemetry Continuity (ADR-003 & ADR-008):</b>
  * Solves the thread-hopping limitation of ThreadLocal-based loggers under non-blocking reactive streams,
- * guaranteeing that correlation identifiers (`traceId`) remain persistent and traceable in all application logs.
+ * guaranteeing that forensic correlation identifiers (`traceId`, `clientIp`, `userAgent`) remain persistent
+ * and traceable in all application logs.
  *
  * <p><b>Contractual Obligations:</b>
  * <ul>
@@ -27,15 +28,19 @@ import reactor.util.context.Context;
  * </ul>
  *
  * @author ThinkLab
- * @version 1.2.0
+ * @version 1.3.0
  * @since 1.0
  */
 public final class ReactorMdcBridge {
 
-    private static final String MDC_TRACE_KEY = "traceId";
+    /**
+     * Defines the exact telemetry matrix keys synchronized between Reactor and SLF4J MDC.
+     */
+    private static final String[] MDC_KEYS = {"traceId", "clientIp", "userAgent"};
 
     /**
-     * Private constructor to prevent instantiation of utility utility class.
+     * Private constructor to prevent instantiation of utility class.
+     * Throws an exception to enforce strict boundary constraints.
      */
     private ReactorMdcBridge() {
         throw new UnsupportedOperationException("Utility class cannot be instantiated.");
@@ -120,17 +125,18 @@ public final class ReactorMdcBridge {
         }
 
         /**
-         * Pulls the traceId from the reactive context and binds it to the current physical thread's MDC.
-         * Clears the context if no trace token is found to prevent data leakage across pooled threads.
+         * Synchronizes all registered forensic telemetry keys from the Reactor Context
+         * to the current physical thread's MDC. Clears missing keys to prevent data leakage across pooled threads.
          *
          * @param context The reactive execution context.
          */
         private void syncMdc(Context context) {
-            if (context.hasKey(MDC_TRACE_KEY)) {
-                String traceId = context.get(MDC_TRACE_KEY);
-                MDC.put(MDC_TRACE_KEY, traceId);
-            } else {
-                MDC.remove(MDC_TRACE_KEY);
+            for (String key : MDC_KEYS) {
+                if (context.hasKey(key)) {
+                    MDC.put(key, context.get(key));
+                } else {
+                    MDC.remove(key);
+                }
             }
         }
     }

@@ -13,8 +13,12 @@
 <!--  *              - File sinks use strict JSON structuring (LogstashEncoder) for ELK/Datadog.    -->
 <!--  *              - Async buffers prevent Disk I/O or stdout congestion from halting the JVM.    -->
 <!--  *                                                                                             -->
+<!--  * @architecture ADR-008: Reactive MDC Context Propagation Bridge                              -->
+<!--  *              - Full forensic telemetry matrix (traceId, clientIp, userAgent) injected       -->
+<!--  *                across all reactive boundaries for end-to-end traceability.                  -->
+<!--  *                                                                                             -->
 <!--  * @maintainer  Thinklab Systems Engineering Team                                              -->
-<!--  * @version     3.2.0 (Mission-Critical Zero-Blocking Edition + I/O Optimized)                 -->
+<!--  * @version     3.3.0 (Mission-Critical Zero-Blocking Edition + Forensic Origin Telemetry)     -->
 <!--  */                                                                                            -->
 <!-- ============================================================================================== -->
 <configuration scan="false">
@@ -28,11 +32,11 @@
 
     <!-- ============================================================================================== -->
     <!-- [SYNCHRONOUS] CONSOLE APPENDER (HUMAN-READABLE)                                                -->
-    <!-- Physical sink for standard output. Optimized pattern including thread context and MDC traceId. -->
+    <!-- Physical sink for standard output. Optimized pattern including full forensic telemetry matrix. -->
     <!-- ============================================================================================== -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%cyan(%d{HH:mm:ss.SSS}) %gray([%-15.15thread]) %highlight(%-5level) %magenta(%-30.30logger{29}) %green([trace=%mdc{traceId:-NONE}]) - %msg%n</pattern>
+            <pattern>%cyan(%d{HH:mm:ss.SSS}) %gray([%-15.15thread]) %highlight(%-5level) %magenta(%-30.30logger{29}) %green([trace=%mdc{traceId:-NONE} | ip=%mdc{clientIp:-NONE} | client=%mdc{userAgent:-NONE}]) - %msg%n</pattern>
         </encoder>
     </appender>
 
@@ -40,6 +44,7 @@
     <!-- [SYNCHRONOUS] AUDIT FILE APPENDER (ROLLING & STRUCTURED JSON)                                  -->
     <!-- Physical sink for persistent storage with time-based rotation and historical bounds.           -->
     <!-- Emits strictly structured JSON (Logstash format) enriched with domain and service metadata.    -->
+    <!-- Note: MDC keys (traceId, clientIp, userAgent) are automatically extracted by LogstashEncoder.  -->
     <!-- ============================================================================================== -->
     <appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>logs/audit.log</file>
