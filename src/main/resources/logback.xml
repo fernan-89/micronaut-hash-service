@@ -3,22 +3,26 @@
 <!-- /**                                                                                            -->
 <!--  * @file        logback.xml                                                                    -->
 <!--  * @module      Thinklab Infrastructure / Hash Service & Forensic Audit                        -->
-<!--  * @description Ultra-high-throughput, non-blocking asynchronous logging topology.              -->
-<!--  *              Hardened for reactive event loops (Project Reactor/Netty) to guarantee zero     -->
+<!--  *                                                                                             -->
+<!--  * @description Ultra-high-throughput, non-blocking asynchronous logging topology.             -->
+<!--  *              Hardened for reactive event loops (Project Reactor/Netty) to guarantee zero    -->
 <!--  *              thread-blocking behavior under extreme peak loads and latency spikes.          -->
 <!--  *                                                                                             -->
-<!--  * @constraint  Console outputs use ANSI escape sequences with MDC traceId injection;            -->
-<!--  *              Files use strict JSON structuring (LogstashEncoder) for forensic analysis.     -->
+<!--  * @architecture ADR-003: Non-Blocking Observability & Telemetry                               -->
+<!--  *              - Console outputs use ANSI escape sequences with MDC traceId injection.        -->
+<!--  *              - File sinks use strict JSON structuring (LogstashEncoder) for ELK/Datadog.    -->
+<!--  *              - Async buffers prevent Disk I/O or stdout congestion from halting the JVM.    -->
+<!--  *                                                                                             -->
 <!--  * @maintainer  Thinklab Systems Engineering Team                                              -->
-<!--  * @version     3.1.0 (Mission-Critical Zero-Blocking Edition + I/O Optimized)                 -->
+<!--  * @version     3.2.0 (Mission-Critical Zero-Blocking Edition + I/O Optimized)                 -->
 <!--  */                                                                                            -->
 <!-- ============================================================================================== -->
 <configuration scan="false">
 
     <!-- ============================================================================================== -->
     <!-- GRACEFUL SHUTDOWN HOOK                                                                         -->
-    <!-- Garante que as filas assíncronas sejam esvaziadas no disco antes do término da JVM,            -->
-    <!-- prevenindo perda de logs (telemetria fantasma) durante re-deploys ou crashes.                  -->
+    <!-- Ensures asynchronous queues are flushed to disk prior to JVM termination, preventing         -->
+    <!-- "ghost telemetry" (loss of in-flight log events) during redeployments or sudden crashes.       -->
     <!-- ============================================================================================== -->
     <shutdownHook class="ch.qos.logback.core.hook.DelayingShutdownHook"/>
 
@@ -28,7 +32,7 @@
     <!-- ============================================================================================== -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%cyan(%d{HH:mm:ss.SSS}) %gray([%-15.15thread]) %highlight(%-5level) %magenta(%-30.30logger{29}) %yellow([trace=%mdc{traceId:-NONE}]) - %msg%n</pattern>
+            <pattern>%cyan(%d{HH:mm:ss.SSS}) %gray([%-15.15thread]) %highlight(%-5level) %magenta(%-30.30logger{29}) %green([trace=%mdc{traceId:-NONE}]) - %msg%n</pattern>
         </encoder>
     </appender>
 
@@ -40,12 +44,14 @@
     <appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>logs/audit.log</file>
 
-        <!-- DESATIVA O FLUSH IMEDIATO: Faz escritas em lote (batching) no SO, maximizando o throughput de I/O -->
+        <!-- Defers disk writes to the OS page cache, massively improving I/O throughput. -->
         <immediateFlush>false</immediateFlush>
 
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>logs/audit.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <!-- Retains 30 days of forensic history before automatic purging -->
             <maxHistory>30</maxHistory>
+            <!-- Hard limit to prevent disk exhaustion -->
             <totalSizeCap>3GB</totalSizeCap>
         </rollingPolicy>
 
@@ -60,20 +66,28 @@
     <!-- ============================================================================================== -->
     <appender name="ASYNC_STDOUT" class="ch.qos.logback.classic.AsyncAppender">
         <appender-ref ref="STDOUT" />
-        <!-- Expanded queue size to absorb burst traffic safely (Power of 2 alignment) -->
+
+        <!-- Expanded queue size to absorb burst traffic safely (Power of 2 alignment). -->
         <queueSize>2048</queueSize>
-        <!-- Reserva os últimos ~20% da fila exclusivamente para WARN e ERROR. Evita perda de erros em picos. -->
+
+        <!-- Reserves the last ~20% of the queue (400 items) exclusively for WARN and ERROR events. -->
+        <!-- Drops TRACE, DEBUG, and INFO if the queue reaches this limit during extreme traffic.   -->
         <discardingThreshold>400</discardingThreshold>
+
+        <!-- Bypasses expensive stack trace generation for standard logs to save CPU cycles.        -->
         <includeCallerData>false</includeCallerData>
-        <!-- NASA-Grade Protection: Never block application threads if the queue saturates -->
+
+        <!-- NASA-Grade Protection: NEVER block application threads if the queue saturates.         -->
+        <!-- If the queue fills up, logs are dropped, but the reactive application survives.        -->
         <neverBlock>true</neverBlock>
-        <!-- Forces periodic queue flushing to prevent stale telemetry on sudden shutdowns -->
+
+        <!-- Forces periodic queue flushing (max 1000ms) to prevent stale telemetry on shutdown.    -->
         <maxFlushTime>1000</maxFlushTime>
     </appender>
 
     <!-- ============================================================================================== -->
     <!-- [ASYNCHRONOUS] MISSION-CRITICAL AUDIT FILE WRAPPER                                             -->
-    <!-- Protects disk I/O bottlenecks from degrading transaction latencies.                            -->
+    <!-- Protects reactive threads from disk I/O bottlenecks and filesystem latency spikes.             -->
     <!-- ============================================================================================== -->
     <appender name="ASYNC_AUDIT" class="ch.qos.logback.classic.AsyncAppender">
         <appender-ref ref="AUDIT_FILE" />
@@ -86,7 +100,8 @@
 
     <!-- ============================================================================================== -->
     <!-- ISOLATED AUDIT LOGGER (STRICT ENCAPSULATION)                                                   -->
-    <!-- additivity="false" prevents duplicate event propagation into the root console stream.          -->
+    <!-- additivity="false" prevents duplicate event propagation into the root console stream,          -->
+    <!-- ensuring forensic logs are solely routed to the JSON file sink.                                -->
     <!-- ============================================================================================== -->
     <logger name="AUDIT_LOG" level="INFO" additivity="false">
         <appender-ref ref="ASYNC_AUDIT"/>
@@ -94,20 +109,21 @@
 
     <!-- ============================================================================================== -->
     <!-- THIRD-PARTY NOISE REDUCTION (SILENCERS)                                                        -->
-    <!-- Suppresses verbose discovery/IO chatter from external drivers and reactive networking.         -->
+    <!-- Suppresses verbose discovery/IO chatter from external drivers and reactive networking,         -->
+    <!-- keeping the standard output clean and actionable.                                              -->
     <!-- ============================================================================================== -->
-    <!-- MongoDB Drivers -->
+    <!-- MongoDB Reactive Driver -->
     <logger name="org.mongodb.driver.cluster" level="WARN"/>
     <logger name="org.mongodb.driver.client" level="WARN"/>
     <logger name="org.mongodb.driver.connection" level="WARN"/>
 
-    <!-- Reactive Networking (Netty/Reactor) -->
+    <!-- Reactive Networking (Netty/Project Reactor) -->
     <logger name="io.netty" level="WARN"/>
     <logger name="reactor.netty" level="WARN"/>
 
     <!-- ============================================================================================== -->
     <!-- ROOT LOGGER SINK                                                                               -->
-    <!-- Global fallback routing for all framework and library events.                                  -->
+    <!-- Global fallback routing for all framework, library, and application events.                    -->
     <!-- ============================================================================================== -->
     <root level="INFO">
         <appender-ref ref="ASYNC_STDOUT"/>

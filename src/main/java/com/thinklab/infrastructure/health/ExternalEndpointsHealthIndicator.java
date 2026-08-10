@@ -34,6 +34,11 @@ import java.util.Objects;
  *     isolating the pod from the routing mesh if critical outbound dependencies degrade.</li>
  * </ol>
  *
+ * <p><b>Synchronous Barrier (ADR-007):</b>
+ * During the {@link StartupEvent}, this component intentionally blocks the main initialization thread
+ * using Reactor's blocking operators. This guarantees the application does not report as "Running"
+ * and does not open its HTTP ports until all critical external dependencies have been fully verified.
+ *
  * <p><b>Contractual Obligations:</b>
  * <ul>
  * <li><b>Constructor Injection (ADR-001):</b> Utilizes an explicit {@link Inject} constructor to guarantee
@@ -44,7 +49,7 @@ import java.util.Objects;
  * </ul>
  *
  * @author ThinkLab
- * @version 1.4.0
+ * @version 1.5.0
  * @since 1.0
  */
 @Singleton
@@ -87,6 +92,7 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
     /**
      * Intercepts the framework's StartupEvent to proactively initialize network paths.
      * Generates structured telemetry logs identifying the current node's host and IP footprint.
+     * Implements a Synchronous Barrier (ADR-007) to prevent premature traffic routing.
      *
      * @param event The application startup event triggered by the IoC container. Must not be null.
      */
@@ -104,10 +110,16 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
         log.info("[EXTERNAL_HEALTH_WARMUP] - IP Address: [{}]", infrastructureIpAddress);
         log.info("[EXTERNAL_HEALTH_WARMUP] - Initiating proactive warmup for {} external dependencies...", targetEndpoints.size());
 
-        Flux.fromIterable(targetEndpoints.entrySet())
-                .flatMap(this::checkEndpoint)
-                .doOnNext(entry -> log.info("[EXTERNAL_HEALTH_WARMUP] - Warmup state: [{}] -> {}", entry.getKey(), entry.getValue()))
-                .subscribe();
+        try {
+            Flux.fromIterable(targetEndpoints.entrySet())
+                    .flatMap(this::checkEndpoint)
+                    .doOnNext(entry -> log.info("[EXTERNAL_HEALTH_WARMUP] - Warmup state: [{}] -> {}", entry.getKey(), entry.getValue()))
+                    // ADR-007: Synchronous barrier ensuring no HTTP traffic is served before external checks complete.
+                    // Caps the wait time to 10 seconds to prevent indefinite startup hangs.
+                    .blockLast(Duration.ofSeconds(10));
+        } catch (Exception e) {
+            log.warn("[EXTERNAL_HEALTH_WARMUP] ⚠️ Warmup barrier interrupted or timed out. Reason: {}", e.getMessage());
+        }
     }
 
     /**
