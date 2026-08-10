@@ -10,12 +10,14 @@ import io.micronaut.http.server.exceptions.ExceptionHandler;
 import jakarta.inject.Singleton;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 
 import java.net.URI;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Infrastructure Adapter: Global Exception Handler for centralized error management.
@@ -24,6 +26,10 @@ import java.util.Objects;
  * This adapter intercepts all domain, validation, and infrastructure exceptions thrown during the
  * lifecycle of an HTTP request. It acts as the final translation barrier, converting raw exceptions
  * into standardized <b>RFC 7807 "Problem Details"</b> JSON responses.
+ *
+ * <p><b>Telemetry & MDC Continuity (ADR-003):</b>
+ * Automatically recovers or establishes the distributed tracing identifier (`traceId`) from request attributes
+ * or headers, injecting it into SLF4J's MDC to ensure seamless correlation during error handling flows.
  *
  * <p><b>Contractual Obligations:</b>
  * <ul>
@@ -36,6 +42,7 @@ import java.util.Objects;
  * </ul>
  *
  * @author ThinkLab
+ * @version 1.1.0
  * @since 1.0
  */
 @Slf4j
@@ -45,13 +52,15 @@ import java.util.Objects;
 public class GlobalExceptionHandler implements ExceptionHandler<Throwable, HttpResponse<Map<String, Object>>> {
 
     private static final String PROBLEM_TYPE_BASE_URI = "https://api.thinklab.com/errors/";
+    private static final String MDC_TRACE_KEY = "traceId";
+    private static final String TRACE_ID_HEADER = "X-Trace-Id";
 
     /**
-     * Intercepts any unhandled exception propagating to the HTTP transport layer and maps it
-     * to a standardized RFC 7807 Problem Details response.
+     * Intercepts any unhandled exception propagating to the HTTP transport layer, binds the trace context,
+     * and maps the payload to a standardized RFC 7807 Problem Details response.
      *
-     * @param request   The incoming HTTP request context.
-     * @param exception The caught throwable exception from the reactive pipeline or controller boundary.
+     * @param request   The incoming HTTP request context. Must not be null.
+     * @param exception The caught throwable exception from the reactive pipeline or controller boundary. Must not be null.
      * @return An HTTP response carrying the serialized RFC 7807 problem structure.
      */
     @Override
@@ -59,23 +68,36 @@ public class GlobalExceptionHandler implements ExceptionHandler<Throwable, HttpR
         Objects.requireNonNull(request, "HTTP request context cannot be null.");
         Objects.requireNonNull(exception, "Caught exception cannot be null.");
 
-        String path = request.getPath();
+        // Recover or establish Trace ID continuity for distributed telemetry
+        String traceId = request.getAttribute(MDC_TRACE_KEY, String.class)
+                .orElseGet(() -> request.getHeaders().get(TRACE_ID_HEADER));
 
-        if (exception instanceof BusinessException businessEx) {
-            log.info("[ACTION: GLOBAL_EXCEPTION_HANDLER] [PATH: {}] [CODE: {}] - Business rule violation intercepted: {}",
-                    path, businessEx.getErrorCode(), businessEx.getMessage());
-            return handleBusinessException(businessEx, path);
+        if (traceId == null || traceId.isBlank()) {
+            traceId = UUID.randomUUID().toString();
         }
 
-        if (exception instanceof ConstraintViolationException constraintEx) {
-            log.warn("[ACTION: GLOBAL_EXCEPTION_HANDLER] [PATH: {}] - JSR-380 input validation failure intercepted: {}",
-                    path, constraintEx.getMessage());
-            return handleValidationException(constraintEx, path);
-        }
+        final String activeTraceId = traceId;
 
-        log.error("[ACTION: GLOBAL_EXCEPTION_HANDLER] [PATH: {}] - CRITICAL: Unhandled technical failure encountered in pipeline: {}",
-                path, exception.getMessage(), exception);
-        return handleGenericException(exception, path);
+        // Binds the Trace ID to MDC specifically for the exception handling execution scope
+        try (MDC.MDCCloseable ignored = MDC.putCloseable(MDC_TRACE_KEY, activeTraceId)) {
+            String path = request.getPath();
+
+            if (exception instanceof BusinessException businessEx) {
+                log.info("[ACTION: GLOBAL_EXCEPTION_HANDLER] [PATH: {}] [CODE: {}] - Business rule violation intercepted: {}",
+                        path, businessEx.getErrorCode(), businessEx.getMessage());
+                return handleBusinessException(businessEx, path);
+            }
+
+            if (exception instanceof ConstraintViolationException constraintEx) {
+                log.warn("[ACTION: GLOBAL_EXCEPTION_HANDLER] [PATH: {}] - JSR-380 input validation failure intercepted: {}",
+                        path, constraintEx.getMessage());
+                return handleValidationException(constraintEx, path);
+            }
+
+            log.error("[ACTION: GLOBAL_EXCEPTION_HANDLER] [PATH: {}] - CRITICAL: Unhandled technical failure encountered in pipeline: {}",
+                    path, exception.getMessage(), exception);
+            return handleGenericException(exception, path);
+        }
     }
 
     /**
