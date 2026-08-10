@@ -1,0 +1,481 @@
+{
+  "info": {
+    "_postman_id": "e2cece1b-8d60-464b-ba04-0e984cb1f4d2",
+    "name": "Hash Service - Comprehensive Lifecycle & Telemetry Suite",
+    "description": "Suite E2E abrangente para o HashController. Valida o ciclo de vida completo, algoritmos, listagem, trilhas de auditoria, testes negativos e injeção automática de Trace ID para correlação de logs MDC.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "39879181"
+  },
+  "item": [
+    {
+      "name": "00. Infrastructure & Telemetry",
+      "item": [
+        {
+          "name": "Health Check (Kubernetes Probes)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
+                  "const jsonData = pm.response.json();",
+                  "pm.test(\"Global Health is UP\", () => pm.expect(jsonData.status).to.eql('UP'));",
+                  "pm.test(\"MongoDB Component is UP\", () => {",
+                  "    pm.expect(jsonData.details.mongodb).to.not.be.undefined;",
+                  "    pm.expect(jsonData.details.mongodb.status).to.eql('UP');",
+                  "});",
+                  "pm.test(\"External Endpoints Component is UP\", () => {",
+                  "    pm.expect(jsonData.details['external-endpoints']).to.not.be.undefined;",
+                  "    pm.expect(jsonData.details['external-endpoints'].status).to.eql('UP');",
+                  "    pm.expect(jsonData.details['external-endpoints'].details.resolvedIpAddress).to.not.be.undefined;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01. Lifecycle Scenarios",
+      "item": [
+        {
+          "name": "01. Generate Hash (SHA3_256)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 201 Created\", () => pm.response.to.have.status(201));",
+                  "const jsonData = pm.response.json();",
+                  "pm.environment.set(\"hashId\", jsonData.id);",
+                  "pm.test(\"Contract: ID and HashValue are generated\", () => {",
+                  "    pm.expect(jsonData.id).to.not.be.undefined;",
+                  "    pm.expect(jsonData.hashValue).to.not.be.undefined;",
+                  "});",
+                  "pm.test(\"Contract: Status is ACTIVE\", () => pm.expect(jsonData.status).to.eql(\"ACTIVE\"));",
+                  "pm.test(\"Algorithm matches SHA3_256\", () => pm.expect(jsonData.algorithm).to.eql(\"SHA3_256\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"tenantId\": \"tenant-123\",\n    \"payload\": \"dado-de-teste-sha3-{{$randomAlphaNumeric}}\",\n    \"algorithm\": \"SHA3_256\",\n    \"sourceService\": \"mobile-app\",\n    \"executor\": \"test-user-01\",\n    \"asSerialKey\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/hashes",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "hashes"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "02. Get Hash By ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"ID matches environment\", () => pm.expect(pm.response.json().id).to.eql(pm.environment.get(\"hashId\")));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/hashes/{{hashId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "hashes",
+                "{{hashId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "03. List Tenant Hashes (Paginated)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns array structure\", () => {",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(Array.isArray(res.content) ? res.content : res).to.not.be.empty;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "tenant-123"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/hashes?page=0&size=20&status=ACTIVE",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "hashes"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "04. Deactivate Hash",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Status updated to INACTIVE\", () => pm.expect(pm.response.json().status).to.eql(\"INACTIVE\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"executor\": \"admin-user\",\n    \"reason\": \"Manutenção programada e suspensão temporária\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/hashes/{{hashId}}/deactivate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "hashes",
+                "{{hashId}}",
+                "deactivate"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "05. Reactivate Hash",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Status restored to ACTIVE\", () => pm.expect(pm.response.json().status).to.eql(\"ACTIVE\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"executor\": \"admin-user\",\n    \"reason\": \"Retorno à operação regulamentar\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/hashes/{{hashId}}/reactivate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "hashes",
+                "{{hashId}}",
+                "reactivate"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "06. Get Forensic Audit Trail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
+                  "const logs = pm.response.json();",
+                  "pm.test(\"Contains at least 3 audit events (Created, Deactivated, Reactivated)\", () => pm.expect(logs.length).to.be.at.least(3));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/hashes/{{hashId}}/audit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "hashes",
+                "{{hashId}}",
+                "audit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "07. Revoke Hash (Terminal State)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Status is REVOKED\", () => pm.expect(pm.response.json().status).to.eql(\"REVOKED\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"executor\": \"security-admin\",\n    \"reason\": \"Comprometimento crítico de segurança detectado\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/hashes/{{hashId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "hashes",
+                "{{hashId}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02. Negative Testing (Resilience)",
+      "item": [
+        {
+          "name": "08. Error: Validation Failure (Missing Tenant)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 400 Bad Request\", () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"payload\": \"missing-tenant-payload\",\n    \"algorithm\": \"SHA3_256\",\n    \"sourceService\": \"mobile-app\",\n    \"executor\": \"test-user\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/hashes",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "hashes"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "09. Error: Hash Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 404 Not Found\", () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/hashes/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "hashes",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "10. Error: Reactivate REVOKED Hash",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 4xx (Bad Request or Conflict)\", () => {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400, 409, 422]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"executor\": \"hacker\",\n    \"reason\": \"Tentando reativar item revogado\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/hashes/{{hashId}}/reactivate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "hashes",
+                "{{hashId}}",
+                "reactivate"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// [COLLECTION LEVEL] Auto-inject Trace ID in all requests for MDC correlation",
+          "const traceId = pm.variables.replaceIn('{{$guid}}');",
+          "pm.request.headers.add({ key: 'X-Trace-Id', value: traceId });",
+          "pm.variables.set('currentTraceId', traceId);"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// [COLLECTION LEVEL] Global Assertions",
+          "pm.test(\"Response time is acceptable (< 1000ms)\", function () {",
+          "    pm.expect(pm.response.responseTime).to.be.below(1000);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    }
+  ]
+}
