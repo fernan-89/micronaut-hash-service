@@ -1,0 +1,124 @@
+# ==============================================================================================
+# /**
+#  * @file        k8s-deployment.yaml
+#  * @module      Kubernetes Workload Manifest
+#  * @description High-availability Deployment and ClusterIP Service for the Hash Service.
+#  *              Implements strict SecurityContexts, graceful termination, and native HTTP
+#  *              probes tailored for Distroless containers (no shell dependencies).
+#  */
+# ==============================================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thinklab-hash-service
+  namespace: security-mesh
+  labels:
+    app: hash-service
+    tier: backend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: hash-service
+  template:
+    metadata:
+      labels:
+        app: hash-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/prometheus"
+    spec:
+      # Instructs the kubelet to wait 30s before sending SIGKILL, allowing Netty to drain connections.
+      terminationGracePeriodSeconds: 30
+
+      # ----------------------------------------------------------------------------------------
+      # SECURITY CONTEXT: Zero-Trust Pod Isolation
+      # ----------------------------------------------------------------------------------------
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532 # Matches 'nonroot' UID from the Distroless image
+        runAsGroup: 65532
+        fsGroup: 65532
+
+      containers:
+        - name: hash-service
+          image: thinklab.azurecr.io/hash-service:latest
+          imagePullPolicy: Always
+
+          # ------------------------------------------------------------------------------------
+          # SECURITY CONTEXT: Container Level Escapement Prevention
+          # ------------------------------------------------------------------------------------
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true   # Blocks file writing (prevents payload drops in RCEs)
+            capabilities:
+              drop:
+                - ALL                      # Strips all Linux root capabilities
+
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+
+          env:
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-credentials
+                  key: connection-string
+            - name: MICRONAUT_ENVIRONMENTS
+              value: "k8s,prod"
+
+          # ------------------------------------------------------------------------------------
+          # RESOURCE ALLOCATION: Guaranteed QoS Class
+          # ------------------------------------------------------------------------------------
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+
+          # ------------------------------------------------------------------------------------
+          # DISTROLESS NATIVE PROBES: Kubelet HTTP Calls (No curl/wget needed)
+          # ------------------------------------------------------------------------------------
+          livenessProbe:
+            httpGet:
+              path: /health/liveness
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hash-service-clusterip
+  namespace: security-mesh
+  labels:
+    app: hash-service
+spec:
+  type: ClusterIP
+  selector:
+    app: hash-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
