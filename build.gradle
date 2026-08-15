@@ -2,17 +2,17 @@
 // /**
 //  * @file        build.gradle
 //  * @module      Thinklab Hash Service Build Manifest & Pipeline Orchestration (Groovy DSL)
-//  * @version     v3.4.1-NASA-SRE-PROD-STABLE
+//  * @version     v3.5.0-NASA-SRE-PROD-STABLE
 //  * @description Enterprise-grade, zero-trust build orchestration manifest utilizing Micronaut 4
-//  *              native Ahead-of-Time (AOT) and optimized JAR packaging. Explicitly binds full
-//  *              OpenTelemetry platform libraries and BOM alignment to eradicate any runtime
-//  *              NoClassDefFoundError risks. Fully compatible with modern Gradle v8.x/v9.x engines.
+//  *              native Ahead-of-Time (AOT) and optimized JAR packaging.
+//  *              All fragile third-party OpenTelemetry SDKs have been purged. Telemetry is now
+//  *              100% handled natively via our custom TraceIdFilter (ADR-011).
 //  *
 //  * @architectural_directives
 //  *   1. Identity Sovereignty: Strict UUID enforcement across all domain layers.
 //  *   2. Non-Blocking Reactive First: Fully driven by Project Reactor and Netty EventLoops.
 //  *   3. Cryptographic Hardening: Bundles BouncyCastle primitives with zero signature conflicts.
-//  *   4. Observability Mesh: Native OpenTelemetry W3C trace-context injection & log correlation.
+//  *   4. Observability Mesh: Native W3C trace-context extraction without fragile SDKs.
 //  *
 //  * @maintainer  Thinklab Core Infrastructure & High-Assurance Engineering Team
 //  * @java_target JDK 21 LTS (Virtual Threads, Pattern Matching, Record Patterns fully enabled)
@@ -27,25 +27,12 @@ plugins {
 group   = 'com.thinklab'
 version = '0.1.0-SNAPSHOT'
 
-// ==============================================================================================
-// /**
-//  * @directive   Java Toolchain & Runtime Environment Sovereignty
-//  * @description Enforces strict compliance with JDK 21 LTS toolchain to harness Project Loom
-//  *              Virtual Threads, enhanced Switch expressions, and optimized memory footprints.
-//  */
-// ==============================================================================================
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
     }
 }
 
-// ==============================================================================================
-// /**
-//  * @directive   Application Entry Point Definition
-//  * @description Directs runtime execution paths to the high-assurance bootstrap class.
-//  */
-// ==============================================================================================
 application {
     mainClass = 'com.thinklab.Application'
 }
@@ -54,23 +41,11 @@ repositories {
     mavenCentral()
 }
 
-// ==============================================================================================
-// /**
-//  * @directive   Dependency Version Alignment (BOM / Platform Management)
-//  * @description Guarantees unified transitive version locking across OpenTelemetry modules
-//  *              to prevent version skew and missing class signature conflicts at runtime.
-//  */
-// ==============================================================================================
 dependencies {
-    implementation platform("io.opentelemetry:opentelemetry-bom:1.38.0")
-    implementation platform("io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom:2.3.0")
-
     // ------------------------------------------------------------------------------------------
     // /**
     //  * @layer       AST Manipulation & Compile-time Metaprogramming Processors
-    //  * @description Synthesizes boilerplates, Immutable records, and Micronaut DI reflection maps.
-    //  * @note        CRITICAL COMPILATION ORDER: Lombok annotation processor MUST precede
-    //  *              Micronaut processing nodes to prevent missing getter/setter symbol failures.
+    //  * @note        ORDER IS CRITICAL: Lombok MUST precede Micronaut processors.
     //  */
     // ------------------------------------------------------------------------------------------
     annotationProcessor    'org.projectlombok:lombok:1.18.36'
@@ -85,8 +60,6 @@ dependencies {
     // ------------------------------------------------------------------------------------------
     // /**
     //  * @layer       Core Application Framework & High-Performance Web Services
-    //  * @description Management endpoints, non-blocking HTTP clients, Jackson serialization,
-    //  *              and OpenAPI documentation metadata generation bindings.
     //  */
     // ------------------------------------------------------------------------------------------
     implementation         'io.micronaut:micronaut-management'
@@ -97,20 +70,9 @@ dependencies {
 
     // ------------------------------------------------------------------------------------------
     // /**
-    //  * @layer       Distributed Tracing & SRE Observability Mesh (ADR-010)
-    //  * @description End-to-end OpenTelemetry instrumentation for W3C distributed trace context
-    //  *              propagation, span metrics, and OTLP network telemetry export.
-    //  */
-    // ------------------------------------------------------------------------------------------
-    implementation         'io.opentelemetry:opentelemetry-api'
-    implementation         'io.opentelemetry:opentelemetry-sdk'
-    implementation         'io.micronaut.tracing:micronaut-tracing-opentelemetry-http'
-    implementation         'io.opentelemetry:opentelemetry-exporter-otlp'
-
-    // ------------------------------------------------------------------------------------------
-    // /**
-    //  * @layer       Structured Telemetry & Log Emission
-    //  * @description JSON-formatted enterprise log encoders and standard diagnostic binders.
+    //  * @layer       Structured Telemetry & Log Emission (ADR-011)
+    //  * @description Notice the ABSENCE of opentelemetry-sdk. We rely purely on Logstash
+    //  *              and our custom TraceIdFilter to propagate W3C standard traceparents.
     //  */
     // ------------------------------------------------------------------------------------------
     runtimeOnly            'net.logstash.logback:logstash-logback-encoder:7.4'
@@ -120,8 +82,7 @@ dependencies {
 
     // ------------------------------------------------------------------------------------------
     // /**
-    //  * @layer       Infrastructure & Data Persistence (Reactive)
-    //  * @description Project Reactor event-loop management coupled with non-blocking MongoDB drivers.
+    //  * @layer       Reactive Infrastructure & Non-Blocking Persistence
     //  */
     // ------------------------------------------------------------------------------------------
     implementation         'io.projectreactor:reactor-core'
@@ -132,7 +93,6 @@ dependencies {
     // ------------------------------------------------------------------------------------------
     // /**
     //  * @layer       High-Assurance Cryptography & Security Primitives
-    //  * @description Provides robust cryptographic algorithms (SHA-3, HMAC, Ed25519) via BouncyCastle.
     //  */
     // ------------------------------------------------------------------------------------------
     implementation         'org.bouncycastle:bcprov-jdk18on:1.85'
@@ -140,7 +100,6 @@ dependencies {
     // ------------------------------------------------------------------------------------------
     // /**
     //  * @layer       Quality Assurance, Isolation & Test Harnesses
-    //  * @description Zero-infrastructure test environments utilizing Mockito frameworks and StepVerifier.
     //  */
     // ------------------------------------------------------------------------------------------
     testImplementation     'io.micronaut:micronaut-http-client'
@@ -153,8 +112,6 @@ dependencies {
 // ==============================================================================================
 // /**
 //  * @directive   Compiler Compilation Directives & Diagnostics
-//  * @description Enforces strict UTF-8 text encoding, injects parameter name retention metadata
-//  *              for runtime reflection safety, and configures Swagger UI theme arguments.
 //  */
 // ==============================================================================================
 tasks.withType(JavaCompile).configureEach {
@@ -167,8 +124,6 @@ tasks.withType(JavaCompile).configureEach {
 // ==============================================================================================
 // /**
 //  * @directive   Cloud-Native Reproducible Build Protocol
-//  * @description Strips volatile timestamps and enforces strict deterministic file-entry sorting
-//  *              within archive structures. Guarantees bit-for-bit identical outputs for identical sources.
 //  */
 // ==============================================================================================
 tasks.withType(AbstractArchiveTask).configureEach {
@@ -179,9 +134,6 @@ tasks.withType(AbstractArchiveTask).configureEach {
 // ==============================================================================================
 // /**
 //  * @directive   CI/CD Test Strategy & Fail-Fast Concurrency
-//  * @description Optimizes test execution performance. Aborts pipelines immediately on the first
-//  *              test failure (failFast) to conserve CI runner minutes, and dynamically allocates
-//  *              parallel fork workers based on available host CPUs.
 //  */
 // ==============================================================================================
 tasks.named('test') {
@@ -198,7 +150,6 @@ tasks.named('test') {
 // ==============================================================================================
 // /**
 //  * @directive   GraalVM Native Image Compilation Directives
-//  * @description Prepares container image build parameters for ahead-of-time native binary generation.
 //  */
 // ==============================================================================================
 graalvmNative {
@@ -213,8 +164,6 @@ graalvmNative {
 // ==============================================================================================
 // /**
 //  * @directive   Ahead-of-Time (AOT) Configuration & Micronaut Engine Tuning
-//  * @description Optimizes container boot latency and runtime memory footprint by shifting
-//  *              reflection analysis and service loader initialization phases to compile-time.
 //  */
 // ==============================================================================================
 micronaut {
@@ -235,8 +184,6 @@ micronaut {
         optimizeClassLoading   = true
         deduceEnvironment      = true
         optimizeNetty          = true
-
-        // SECURITY NOTE: Must remain false to prevent the AOT parser from breaking Logstash layout XML tags
         replaceLogbackXml      = false
     }
 }
