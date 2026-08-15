@@ -133,5 +133,4 @@ A complete "Hash Lifecycle Suite" is available for Postman, dynamically integrat
 
 * The collection utilizes pre-request scripts to inject a fresh `X-Trace-Id` into every call, mirroring production environments.
 
-
 * Includes automated assertions (`pm.test`) to validate structural integrity, HTTP RFC 7807 problem details, and state machine transitions across the entire token lifecycle.
