@@ -7,6 +7,7 @@ import com.thinklab.domain.exception.HashNotFoundException;
 import com.thinklab.domain.model.HashAudit;
 import com.thinklab.domain.model.HashToken;
 import com.thinklab.domain.valueobject.HashStatus;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -73,6 +74,9 @@ class DeactivateHashInteractorTest {
     void shouldDeactivateHashSuccessfully() {
         // Given: The token is found and the domain logic returns a new inactive instance
         HashToken deactivatedToken = mock(HashToken.class);
+        when(deactivatedToken.id()).thenReturn(hashId);
+        when(deactivatedToken.status()).thenReturn(HashStatus.INACTIVE);
+        when(deactivatedToken.tenantId()).thenReturn(tenantId.toString());
 
         when(hashTokenRepository.findById(hashId)).thenReturn(Mono.just(activeToken));
         when(activeToken.deactivate(command.executor())).thenReturn(deactivatedToken);
@@ -113,13 +117,17 @@ class DeactivateHashInteractorTest {
     }
 
     /**
-     * Validates synchronous boundary defense (Fail-Fast) when receiving null input.
+     * Validates synchronous boundary defense (Fail-Fast) when receiving null input with uniform constraint messages.
      */
     @Test
     @DisplayName("Should fail fast with NullPointerException when the command is null")
     void shouldFailFastWhenCommandIsNull() {
-        assertThrows(NullPointerException.class, () -> interactor.execute(null));
+        NullPointerException exception = Assertions.assertThrows(
+                NullPointerException.class,
+                () -> interactor.execute(null)
+        );
 
+        Assertions.assertEquals("Application constraint violated: DeactivateHashCommand cannot be null.", exception.getMessage());
         verifyNoInteractions(hashTokenRepository);
         verifyNoInteractions(hashAuditRepository);
     }

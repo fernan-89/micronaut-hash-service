@@ -4,8 +4,11 @@
 #  * @module      Thinklab Hash Service Core Configuration
 #  * @description Centralized configuration manifest for the Micronaut 4.x runtime.
 #  * Orchestrates application identity, Netty reactive engine, OpenAPI/Swagger
-#  * documentation, health/metrics telemetry, and high-performance database
-#  * connection pooling. Adheres to cloud-native and 12-factor app principles.
+#  * documentation, health/metrics telemetry, OpenTelemetry distributed tracing,
+#  * and high-performance database connection pooling. Adheres to cloud-native
+#  * and 12-factor app principles.
+#  *
+#  * @architecture ADR-010: Adoption of OpenTelemetry and W3C Trace Context
 #  *
 #  * @maintainer  Thinklab Systems Engineering Team
 #  * @target      Production (Mission-Critical NASA-Level Standard)
@@ -108,6 +111,22 @@ endpoints:
 
 # ----------------------------------------------------------------------------------------------
 # /**
+#  * @section     Distributed Tracing & OpenTelemetry (ADR-010)
+#  * @description Configures Micronaut OpenTelemetry SDK integration for native W3C Trace Context
+#  * propagation. Intercepts incoming HTTP borders and downstream drivers to produce standard
+#  * compliant spans and trace metadata.
+#  */
+# ----------------------------------------------------------------------------------------------
+otel:
+  sdk:
+    disabled: false
+  traces:
+    exporter: ${OTEL_TRACES_EXPORTER:logging}
+  propagation:
+    type: tracecontext
+
+# ----------------------------------------------------------------------------------------------
+# /**
 #  * @section     Data Persistence / Reactive MongoDB Driver
 #  * @description Configures the MongoDB driver with production-grade constraints.
 #  * Implements a robust connection pool topology, aggressive socket timeouts
@@ -115,7 +134,7 @@ endpoints:
 #  * strict data durability and consistency across replica sets.
 #  *
 #  * @tuning      uuid-representation: STANDARD - Mandated to resolve BSON CodecConfigurationException.
-#  * @resilience  Fail-fast semantics applied to server selection to prevent cascasing failures.
+#  * @resilience  Fail-fast semantics applied to server selection to prevent cascading failures.
 #  */
 # ----------------------------------------------------------------------------------------------
 mongodb:

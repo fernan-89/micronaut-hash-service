@@ -6,7 +6,6 @@ import com.thinklab.application.usecase.command.ReactivateHashCommand;
 import com.thinklab.domain.exception.HashNotFoundException;
 import com.thinklab.domain.model.HashAudit;
 import com.thinklab.domain.model.HashToken;
-import com.thinklab.domain.valueobject.HashStatus;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -50,8 +49,6 @@ class ReactivateHashInteractorTest {
     @BeforeEach
     void setUp() {
         hashId = UUID.randomUUID();
-        // CRITICAL FIX: Pass the UUID object directly to the command.
-        // ReactivateHashCommand now enforces strong typing [1, 5].
         command = new ReactivateHashCommand(
                 hashId,
                 "nasa-sre-operator",
@@ -59,6 +56,9 @@ class ReactivateHashInteractorTest {
         );
     }
 
+    /**
+     * Happy Path: Validates the atomic reactivation state transition and forensic trail logging.
+     */
     @Test
     @DisplayName("Should successfully reactivate token and generate forensic audit")
     void shouldReactivateAndAuditSuccessfully() {
@@ -66,7 +66,6 @@ class ReactivateHashInteractorTest {
         HashToken reactivatedToken = mock(HashToken.class);
         HashAudit mockAudit = mock(HashAudit.class);
 
-        // All discovery methods now use the native UUID [6, 7]
         when(hashTokenRepository.findById(hashId)).thenReturn(Mono.just(initialToken));
         when(initialToken.reactivate(command.executor())).thenReturn(reactivatedToken);
 
@@ -85,6 +84,10 @@ class ReactivateHashInteractorTest {
         verify(hashAuditRepository, times(1)).save(any(HashAudit.class));
     }
 
+    /**
+     * Business Invariant: Validates that attempting to reactivate a non-existent token
+     * aborts the pipeline and signals a semantic HashNotFoundException.
+     */
     @Test
     @DisplayName("Should signal HashNotFoundException and abort when entity is missing")
     void shouldAbortPipelineWhenTokenNotFound() {
@@ -98,10 +101,19 @@ class ReactivateHashInteractorTest {
         verify(hashAuditRepository, never()).save(any());
     }
 
+    /**
+     * Defensive Boundary: Ensures fail-fast behavior with uniform constraint error messages
+     * when null input is received at the application edge.
+     */
     @Test
     @DisplayName("Should fail fast with NullPointerException when the command is null")
     void shouldThrowNullPointerExceptionWhenCommandIsNull() {
-        Assertions.assertThrows(NullPointerException.class, () -> interactor.execute(null));
+        NullPointerException exception = Assertions.assertThrows(
+                NullPointerException.class,
+                () -> interactor.execute(null)
+        );
+
+        Assertions.assertEquals("Application constraint violated: ReactivateHashCommand cannot be null.", exception.getMessage());
         verifyNoInteractions(hashTokenRepository, hashAuditRepository);
     }
 }

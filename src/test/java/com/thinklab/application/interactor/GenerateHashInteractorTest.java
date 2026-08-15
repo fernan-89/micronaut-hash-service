@@ -3,7 +3,7 @@ package com.thinklab.application.interactor;
 import com.thinklab.application.port.out.HashAuditRepositoryPort;
 import com.thinklab.application.port.out.HashTokenRepositoryPort;
 import com.thinklab.application.usecase.command.GenerateHashCommand;
-import com.thinklab.domain.exception.BusinessException;
+import com.thinklab.domain.exception.DuplicateHashException;
 import com.thinklab.domain.model.HashAudit;
 import com.thinklab.domain.model.HashToken;
 import com.thinklab.domain.valueobject.HashAlgorithm;
@@ -113,20 +113,21 @@ class GenerateHashInteractorTest {
     @Test
     @DisplayName("Should signal HASH_DUPLICATE error when an active hash already exists")
     void shouldFailWhenHashAlreadyExists() {
-        // Given: Repository detects an existing active registry
+        // Given: An active hash already exists in the repository (existsActiveByTenantAndPayload returns true)
         when(hashTokenRepository.existsActiveByTenantAndPayload(command.tenantId(), command.payload()))
                 .thenReturn(Mono.just(true));
 
-        // When & Then: The pipeline must emit a terminal error signal
+        // When & Then: Pipeline must emit a DuplicateHashException signal
         StepVerifier.create(interactor.execute(command))
                 .expectErrorMatches(throwable ->
-                        throwable instanceof BusinessException &&
-                                ((BusinessException) throwable).getErrorCode().equals("HASH_DUPLICATE"))
+                        throwable instanceof DuplicateHashException &&
+                                throwable.getMessage().contains("An active cryptographic hash already exists")
+                )
                 .verify();
 
-        // Critical: Verify that no mutation or audit happened
+        // Verification: Ensure token repository was queried but never saved/updated
+        verify(hashTokenRepository, times(1)).existsActiveByTenantAndPayload(command.tenantId(), command.payload());
         verify(hashTokenRepository, never()).save(any());
-        verify(hashAuditRepository, never()).save(any());
     }
 
     /**

@@ -57,8 +57,6 @@ class RevokeHashInteractorTest {
     @BeforeEach
     void setUp() {
         hashId = UUID.randomUUID();
-        // CRITICAL FIX: Removed .toString().
-        // RevokeHashCommand now enforces native UUID typing for ID sovereignty.
         command = new RevokeHashCommand(
                 hashId,
                 "secops-officer-99",
@@ -77,11 +75,11 @@ class RevokeHashInteractorTest {
         HashToken revokedToken = mock(HashToken.class);
         HashAudit mockAudit = mock(HashAudit.class);
 
-        // Ensure repository and aggregate use native UUIDs
         when(hashTokenRepository.findById(hashId)).thenReturn(Mono.just(initialToken));
         when(initialToken.revoke(command.executor())).thenReturn(revokedToken);
 
         when(revokedToken.id()).thenReturn(hashId);
+        when(revokedToken.status()).thenReturn(HashStatus.REVOKED);
         when(revokedToken.tenantId()).thenReturn("TENANT-CRITICAL-01");
 
         when(hashTokenRepository.update(revokedToken)).thenReturn(Mono.just(revokedToken));
@@ -118,16 +116,17 @@ class RevokeHashInteractorTest {
     }
 
     /**
-     * Defensive Boundary: Validates synchronous fail-fast for null inputs.
+     * Defensive Boundary: Validates synchronous fail-fast for null inputs with uniform constraint messages.
      */
     @Test
     @DisplayName("Should fail fast with NullPointerException when the command is null")
     void shouldThrowNullPointerExceptionWhenCommandIsNull() {
-        Assertions.assertThrows(
+        NullPointerException exception = Assertions.assertThrows(
                 NullPointerException.class,
                 () -> interactor.execute(null)
         );
 
+        Assertions.assertEquals("Application constraint violated: RevokeHashCommand cannot be null.", exception.getMessage());
         verifyNoInteractions(hashTokenRepository, hashAuditRepository);
     }
 }

@@ -8,6 +8,7 @@ import io.micronaut.http.annotation.Filter;
 import io.micronaut.http.filter.HttpServerFilter;
 import io.micronaut.http.filter.ServerFilterChain;
 import io.micronaut.http.filter.ServerFilterPhase;
+import io.opentelemetry.api.trace.Span;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import org.reactivestreams.Publisher;
@@ -15,15 +16,13 @@ import org.slf4j.MDC;
 import reactor.core.publisher.Mono;
 import reactor.util.context.Context;
 
-import java.util.UUID;
-
 /**
  * Infrastructure Component: Reactive MDC Traceability & Origin Filter.
  *
  * <p><b>Architectural Role:</b>
  * Intercepts all inbound HTTP traffic globally ("/**") at the Netty pipeline boundary.
- * Extracts correlation IDs and forensic origin metadata (IP, User-Agent), injecting them
- * into SLF4J's MDC and Project Reactor's execution context.
+ * Extracts native OpenTelemetry W3C trace identifiers and forensic origin metadata (IP, User-Agent),
+ * injecting them into SLF4J's MDC and Project Reactor's execution context.
  *
  * <p><b>Privacy by Design (LGPD/GDPR):</b>
  * The client IP address is considered Personally Identifiable Information (PII).
@@ -32,13 +31,14 @@ import java.util.UUID;
  *
  * <p><b>Contractual Obligations:</b>
  * <ul>
- * <li><b>Telemetry Matrix (ADR-008):</b> Establishes the baseline traceability matrix (traceId, clientIp, userAgent) for all downstream components.</li>
+ * <li><b>OpenTelemetry W3C (ADR-010):</b> Extracts the active global distributed span trace ID instead of proprietary custom headers.</li>
+ * <li><b>Telemetry Matrix (ADR-008 & ADR-009):</b> Establishes the baseline traceability matrix (traceId, clientIp, userAgent) for all downstream components.</li>
  * <li><b>Reactive Context Propagation:</b> Bridges Netty HTTP thread state with Project Reactor workers to ensure distributed tracing continuity.</li>
  * <li><b>MDC Cleanup:</b> Guarantees thread-context isolation by purging MDC attributes upon request finalization.</li>
  * </ul>
  *
  * @author ThinkLab
- * @version 2.3.0
+ * @version 3.0.0
  * @since 1.0
  */
 @Singleton
@@ -46,7 +46,6 @@ import java.util.UUID;
 @Slf4j
 public class TraceIdFilter implements HttpServerFilter {
 
-    private static final String TRACE_ID_HEADER = "X-Trace-Id";
     private static final String FORWARDED_FOR_HEADER = "X-Forwarded-For";
 
     private static final String MDC_TRACE_KEY = "traceId";
@@ -55,18 +54,18 @@ public class TraceIdFilter implements HttpServerFilter {
 
     /**
      * Defines the execution phase of the filter within the Netty pipeline.
-     * Enforces execution at the earliest possible phase (TRACING).
+     * Enforces execution slightly after the OpenTelemetry tracing phase to ensure valid span contexts.
      *
      * @return Integer representing the filter order phase.
      */
     @Override
     public int getOrder() {
-        return ServerFilterPhase.TRACING.order();
+        return ServerFilterPhase.TRACING.order() + 1;
     }
 
     /**
-     * Intercepts inbound HTTP requests to extract/generate correlation and origin metadata,
-     * binding it to SLF4J MDC and propagating it across reactive thread hops.
+     * Intercepts inbound HTTP requests to extract OpenTelemetry W3C trace tracking and origin metadata,
+     * binding them to SLF4J MDC and propagating them across reactive thread hops.
      *
      * @param request The incoming HTTP request. Must not be null.
      * @param chain   The server filter execution chain. Must not be null.
@@ -75,11 +74,11 @@ public class TraceIdFilter implements HttpServerFilter {
     @Override
     @NonNull
     public Publisher<MutableHttpResponse<?>> doFilter(@NonNull HttpRequest<?> request, @NonNull ServerFilterChain chain) {
-        // 1. Trace ID Extraction
-        String traceId = request.getHeaders().get(TRACE_ID_HEADER);
-        if (traceId == null || traceId.isBlank()) {
-            traceId = UUID.randomUUID().toString();
-            log.trace("[TELEMETRY] Missing Trace ID in inbound request. Generated fresh UUID: {}", traceId);
+        // 1. Trace ID Extraction (Native OpenTelemetry W3C Span Context)
+        String traceId = Span.current().getSpanContext().getTraceId();
+        if (traceId == null || traceId.isBlank() || traceId.equals("00000000000000000000000000000000")) {
+            traceId = "UNTRACED-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+            log.trace("[TELEMETRY] Active OpenTelemetry span missing or invalid. Fallback trace token generated: {}", traceId);
         }
 
         // 2. User-Agent Extraction & Truncation (Prevents log bloat from malicious long headers)
@@ -124,7 +123,7 @@ public class TraceIdFilter implements HttpServerFilter {
     }
 
     /**
-     * Masks the final segment of an IP address to comply with data privacy regulations.
+     * Masks the final segment of an IP address to comply with data privacy regulations (LGPD/GDPR).
      *
      * @param ip The raw IP address (IPv4 or IPv6).
      * @return The obfuscated IP address string.

@@ -134,7 +134,7 @@ class ListHashesInteractorTest {
                 () -> interactor.execute(null)
         );
 
-        Assertions.assertEquals("ListHashesQuery cannot be null.", exception.getMessage());
+        Assertions.assertEquals("Application constraint violated: ListHashesQuery cannot be null.", exception.getMessage());
 
         // Critical: Verify absolute isolation
         verifyNoInteractions(hashTokenRepository);

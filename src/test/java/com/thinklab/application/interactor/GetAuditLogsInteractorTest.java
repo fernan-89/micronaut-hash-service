@@ -29,6 +29,10 @@ import static org.mockito.Mockito.*;
  *      <li><b>Reactive Integrity:</b> Validates non-blocking backpressure and signal propagation using {@link StepVerifier}.</li>
  *      <li><b>Defensive Boundary:</b> Ensures Zero-Trust validation for input identifiers before infrastructure interaction.</li>
  *  </ul>
+ *
+ * @author ThinkLab
+ * @version 2.0.0
+ * @since 1.0
  */
 @ExtendWith(MockitoExtension.class)
 class GetAuditLogsInteractorTest {
@@ -62,7 +66,7 @@ class GetAuditLogsInteractorTest {
 
         when(auditRepository.findByEntityId(entityId)).thenReturn(Flux.just(log1, log2));
 
-        // When & Then: Execute the pipeline using the native UUID (CRITICAL FIX: removed .toString())
+        // When & Then: Execute the pipeline using the native UUID
         StepVerifier.create(interactor.execute(entityId))
                 .expectNext(log1)
                 .expectNext(log2)
@@ -99,13 +103,13 @@ class GetAuditLogsInteractorTest {
         // Given: Null input at the application boundary
         UUID nullId = null;
 
-        // When & Then: Synchronous exception is expected due to Objects.requireNonNull
+        // When & Then: Synchronous exception is expected due to defensive validation guards
         NullPointerException exception = Assertions.assertThrows(
                 NullPointerException.class,
                 () -> interactor.execute(nullId)
         );
 
-        Assertions.assertEquals("Entity ID cannot be null.", exception.getMessage());
+        Assertions.assertEquals("Application constraint violated: Entity UUID cannot be null for forensic retrieval.", exception.getMessage());
 
         // Critical: Verify absolute isolation - no database call should be attempted
         verifyNoInteractions(auditRepository);

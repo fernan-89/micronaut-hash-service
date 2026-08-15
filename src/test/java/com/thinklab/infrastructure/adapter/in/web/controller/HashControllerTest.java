@@ -89,12 +89,12 @@ class HashControllerTest {
         );
         when(generateHashUseCase.execute(any(GenerateHashCommand.class))).thenReturn(Mono.just(dummyToken));
 
-        // When & Then: Execute the controller method and verify the reactive response
+        // When & Then: Execute the controller method and verify the reactive response (DTO id is native UUID)
         StepVerifier.create(controller.generate(request))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.CREATED, response.getStatus());
                     assertNotNull(response.body());
-                    assertEquals(dummyId.toString(), response.body().id());
+                    assertEquals(dummyId, response.body().id());
                 })
                 .verifyComplete();
 
@@ -114,7 +114,7 @@ class HashControllerTest {
         StepVerifier.create(controller.getById(dummyId))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatus());
-                    assertEquals(dummyId.toString(), response.body().id());
+                    assertEquals(dummyId, response.body().id());
                 })
                 .verifyComplete();
     }
@@ -172,11 +172,11 @@ class HashControllerTest {
         DeactivateHashRequest request = new DeactivateHashRequest("security-admin", "Maintenance");
         when(deactivateHashUseCase.execute(any(DeactivateHashCommand.class))).thenReturn(Mono.just(inactiveToken));
 
-        // When & Then
+        // When & Then (DTO status is exposed as String "INACTIVE")
         StepVerifier.create(controller.deactivate(dummyId, request))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatus());
-                    assertEquals(HashStatus.INACTIVE, response.body().status());
+                    assertEquals("INACTIVE", response.body().status());
                 })
                 .verifyComplete();
     }
@@ -192,7 +192,7 @@ class HashControllerTest {
         RevokeHashRequest request = new RevokeHashRequest("secops-admin", "Security compromise");
         when(revokeHashUseCase.execute(any(RevokeHashCommand.class))).thenReturn(Mono.just(revokedToken));
 
-        // When & Then
+        // When & Then (DTO status is exposed as Enum HashStatus.REVOKED)
         StepVerifier.create(controller.revoke(dummyId, request))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatus());

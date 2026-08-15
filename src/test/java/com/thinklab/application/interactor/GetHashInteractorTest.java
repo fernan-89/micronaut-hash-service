@@ -49,10 +49,10 @@ class GetHashInteractorTest {
      */
     @BeforeEach
     void setUp() {
-        // Agora geramos e mantemos o UUID nativo
         hashId = UUID.randomUUID();
         query = new GetHashQuery(hashId);
     }
+
     /**
      * Happy Path: Validates that a valid and existent identifier results in a
      * successful entity projection through the reactive stream.
@@ -99,13 +99,13 @@ class GetHashInteractorTest {
     @Test
     @DisplayName("Should fail fast with NullPointerException when the query is null")
     void shouldThrowNullPointerExceptionWhenQueryIsNull() {
-        // When & Then: Validate synchronous boundary defense
+        // When & Then: Validate synchronous boundary defense matching application guard pattern
         NullPointerException exception = Assertions.assertThrows(
                 NullPointerException.class,
                 () -> interactor.execute(null)
         );
 
-        Assertions.assertEquals("GetHashQuery cannot be null.", exception.getMessage());
+        Assertions.assertEquals("Application constraint violated: GetHashQuery cannot be null.", exception.getMessage());
 
         // Verify total isolation: Zero infrastructure interaction on malformed input
         verifyNoInteractions(hashTokenRepository);
