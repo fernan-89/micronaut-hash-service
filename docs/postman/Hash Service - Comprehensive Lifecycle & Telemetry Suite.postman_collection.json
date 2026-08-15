@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "e2cece1b-8d60-464b-ba04-0e984cb1f4d2",
+    "_postman_id": "e0f3f3a5-52a5-49d0-aa1d-c611334563c7",
     "name": "Hash Service - Comprehensive Lifecycle & Telemetry Suite",
     "description": "Suite E2E abrangente para o HashController. Valida o ciclo de vida completo, algoritmos, listagem, trilhas de auditoria, testes negativos e injeção automática de Trace ID para correlação de logs MDC.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
@@ -80,7 +80,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"tenantId\": \"tenant-123\",\n    \"payload\": \"dado-de-teste-sha3-{{$randomAlphaNumeric}}\",\n    \"algorithm\": \"SHA3_256\",\n    \"sourceService\": \"mobile-app\",\n    \"executor\": \"test-user-01\",\n    \"asSerialKey\": true\n}",
+              "raw": "{\n    \"tenantId\": \"{{tenant_id}}\",\n    \"payload\": \"dado-de-teste-sha3-{{$randomAlphaNumeric}}\",\n    \"algorithm\": \"SHA3_256\",\n    \"sourceService\": \"mobile-app\",\n    \"executor\": \"{{executor}}\",\n    \"asSerialKey\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -151,7 +151,7 @@
             "header": [
               {
                 "key": "X-Tenant-Id",
-                "value": "tenant-123"
+                "value": "{{tenant_id}}"
               }
             ],
             "url": {
@@ -199,7 +199,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"executor\": \"admin-user\",\n    \"reason\": \"Manutenção programada e suspensão temporária\"\n}",
+              "raw": "{\n    \"executor\": \"{{executor}}\",\n    \"reason\": \"Manutenção programada e suspensão temporária\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -239,7 +239,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"executor\": \"admin-user\",\n    \"reason\": \"Retorno à operação regulamentar\"\n}",
+              "raw": "{\n    \"executor\": \"{{executor}}\",\n    \"reason\": \"Retorno à operação regulamentar\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -311,7 +311,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"executor\": \"security-admin\",\n    \"reason\": \"Comprometimento crítico de segurança detectado\"\n}",
+              "raw": "{\n    \"executor\": \"{{executor}}\",\n    \"reason\": \"Comprometimento crítico de segurança detectado\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -354,7 +354,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"payload\": \"missing-tenant-payload\",\n    \"algorithm\": \"SHA3_256\",\n    \"sourceService\": \"mobile-app\",\n    \"executor\": \"test-user\"\n}",
+              "raw": "{\n    \"payload\": \"missing-tenant-payload\",\n    \"algorithm\": \"SHA3_256\",\n    \"sourceService\": \"mobile-app\",\n    \"executor\": \"{{executor}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
