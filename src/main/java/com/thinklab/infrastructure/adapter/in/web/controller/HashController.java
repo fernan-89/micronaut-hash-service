@@ -12,6 +12,7 @@ import io.micronaut.http.MutableHttpResponse;
 import io.micronaut.http.annotation.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -47,13 +48,13 @@ import java.util.UUID;
  * Emits signals via Reactor lifecycle hooks ({@code doOnSubscribe}, {@code doOnSuccess}, {@code doOnError})
  * without disrupting the asynchronous data stream.
  *
- * @author ThinkLab
- * @version 1.0.0
+ * @author Thinklab Systems Engineering Team
+ * @version 3.4.1-NASA-SRE-PROD
  * @since 1.0
  */
 @Slf4j
 @Controller("/hashes")
-@Tag(name = "Hash Registry API", description = "Endpoints for managing cryptographic hash lifecycles, forensic audits, and serial keys.")
+@Tag(name = "Hash Registry Lifecycle", description = "High-Assurance API for generating, querying, and auditing cryptographic hashes under Zero-Trust constraints.")
 public class HashController {
 
     private final GenerateHashUseCase generateHashUseCase;
@@ -105,7 +106,7 @@ public class HashController {
      */
     @Post
     @Operation(
-            summary = "Generate a new hash",
+            summary = "Generate a new cryptographic hash",
             description = "Calculates a cryptographic hash based on the requested algorithm, persists it securely, and registers the initial creation audit event."
     )
     @ApiResponse(responseCode = "201", description = "Hash generated, persisted, and audited successfully.")
@@ -132,7 +133,7 @@ public class HashController {
      */
     @Get("/{id}")
     @Operation(
-            summary = "Get hash by ID",
+            summary = "Fetch a hash state by UUID",
             description = "Retrieves the sanitized metadata, current operational state, and algorithms details of a specific hash registry."
     )
     @ApiResponse(responseCode = "200", description = "Hash record found and returned successfully.")
@@ -162,14 +163,14 @@ public class HashController {
      */
     @Get
     @Operation(
-            summary = "List tenant hashes",
-            description = "Returns a paginated stream of hashes belonging strictly to the tenant context declared in the request header."
+            summary = "Paginate tenant hashes",
+            description = "Returns a paginated stream of hashes belonging strictly to the tenant context declared in the HTTP header."
     )
     @ApiResponse(responseCode = "200", description = "Paginated list of hashes retrieved and projected successfully.")
     @ApiResponse(responseCode = "400", description = "Missing or blank 'X-Tenant-Id' header, or invalid pagination range parameters.")
     @ApiResponse(responseCode = "500", description = "Internal server error occurred during multitenant lookup execution.")
     public Mono<MutableHttpResponse<PagedHashResponse>> list(
-            @Header("X-Tenant-Id") @NotBlank @Parameter(name = "X-Tenant-Id", description = "Unique identifier of the tenant context for multi-tenancy rules", required = true, example = "tenant-prod-alpha-1") String tenantId,
+            @Header("X-Tenant-Id") @NotBlank @Parameter(in = ParameterIn.HEADER, name = "X-Tenant-Id", description = "Unique identifier of the tenant context to isolate multitenant queries", required = true, example = "tenant-prod-alpha-1") String tenantId,
             @QueryValue @Nullable @Parameter(name = "status", description = "Optional operational state filter to scope the lookup", required = false, example = "ACTIVE") HashStatus status,
             @QueryValue(defaultValue = "0") @Parameter(name = "page", description = "Zero-based index of the target page", schema = @Schema(defaultValue = "0")) int page,
             @QueryValue(defaultValue = "20") @Parameter(name = "size", description = "The maximum volume of records to return in a single page", schema = @Schema(defaultValue = "20")) int size
@@ -195,13 +196,13 @@ public class HashController {
      */
     @Patch("/{id}/deactivate")
     @Operation(
-            summary = "Deactivate a hash",
-            description = "Transitions an ACTIVE hash to an INACTIVE status. This operation is non-destructive, fully reversible, and audited."
+            summary = "Suspend hash operation (Deactivate)",
+            description = "Transitions an ACTIVE hash to an INACTIVE status. This operation is non-destructive, fully reversible, and recorded in the audit trail."
     )
     @ApiResponse(responseCode = "200", description = "Hash successfully transitioned to INACTIVE state and audited.")
     @ApiResponse(responseCode = "400", description = "Invalid request payload or malformed UUID parameter.")
     @ApiResponse(responseCode = "404", description = "No hash record exists for the provided system identifier.")
-    @ApiResponse(responseCode = "409", description = "State transition conflict: hash is already INACTIVE or permanently REVOKED (RFC 7807 compliance).")
+    @ApiResponse(responseCode = "409", description = "State transition conflict: hash is already INACTIVE or permanently REVOKED.")
     public Mono<MutableHttpResponse<DeactivateHashResponse>> deactivate(
             @PathVariable @Parameter(name = "id", description = "The immutable UUID of the target hash registry", required = true, example = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d") UUID id,
             @Body @Valid @Parameter(description = "Deactivation request payload detailing executor and justification", required = true) DeactivateHashRequest request
@@ -225,13 +226,13 @@ public class HashController {
      */
     @Patch("/{id}/reactivate")
     @Operation(
-            summary = "Reactivate a hash",
-            description = "Restores an INACTIVE hash registry back to its ACTIVE operational state. This action is audited."
+            summary = "Restore hash operation (Reactivate)",
+            description = "Restores an INACTIVE hash registry back to its ACTIVE operational state. Fails if the hash is already active or terminal."
     )
     @ApiResponse(responseCode = "200", description = "Hash successfully restored to ACTIVE state and audited.")
     @ApiResponse(responseCode = "400", description = "Invalid request payload or malformed UUID parameter.")
     @ApiResponse(responseCode = "404", description = "No hash record exists for the provided system identifier.")
-    @ApiResponse(responseCode = "409", description = "State transition conflict: hash cannot be reactivated (RFC 7807 compliance).")
+    @ApiResponse(responseCode = "409", description = "State transition conflict: hash cannot be reactivated.")
     public Mono<MutableHttpResponse<HashResponse>> reactivate(
             @PathVariable @Parameter(name = "id", description = "The immutable UUID of the target hash registry", required = true, example = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d") UUID id,
             @Body @Valid @Parameter(description = "Reactivation request payload detailing executor authorization", required = true) ReactivateHashRequest request
@@ -256,7 +257,7 @@ public class HashController {
      */
     @Delete("/{id}")
     @Operation(
-            summary = "Revoke a hash",
+            summary = "Permanently revoke a hash",
             description = "Irreversibly transitions a hash registry to the terminal REVOKED state. Destructive operation that blocks future mutations."
     )
     @ApiResponse(responseCode = "200", description = "Hash permanently revoked and audited successfully.")
@@ -285,7 +286,7 @@ public class HashController {
      */
     @Get("/{id}/audit")
     @Operation(
-            summary = "Get audit trail",
+            summary = "Fetch forensic audit trail",
             description = "Retrieves the complete immutable forensic history of state mutations, deactivations, reactivations, or revocations for a specific hash."
     )
     @ApiResponse(responseCode = "200", description = "Audit trail successfully found and projected.")
@@ -302,13 +303,25 @@ public class HashController {
                 .doOnSuccess(res -> log.info("[ACTION: GET_AUDIT] [ID: {}] - Forensic trail successfully extracted. Total historical events projected: {}", id, res.body() != null ? res.body().size() : 0))
                 .doOnError(err -> log.error("[ACTION: GET_AUDIT] [ID: {}] - Forensic trail extraction failed: {}", id, err.getMessage()));
     }
+
     /**
      * Retrieves a consolidated 360-degree view (State + Chronological Audit Trail).
      * Implementation of ADR 003: Parallel projection for high-assurance discovery.
+     *
+     * @param id The target hash UUID.
+     * @return A {@link Mono} emitting the consolidated {@link HashFullResponse} snapshot.
      */
     @Get("/{id}/details")
-    @Operation(summary = "Get aggregated hash details", description = "Consolidates current state with its full forensic trail.")
-    public Mono<MutableHttpResponse<HashFullResponse>> getFullView(@PathVariable UUID id) {
+    @Operation(
+            summary = "Fetch 360-degree aggregated hash view",
+            description = "Implementation of ADR 003. Consolidates the current operational state of a hash registry with its full chronological forensic audit trail in a single parallel projection."
+    )
+    @ApiResponse(responseCode = "200", description = "Consolidated 360-degree projection successfully materialized.")
+    @ApiResponse(responseCode = "400", description = "Invalid or malformed UUID identifier format.")
+    @ApiResponse(responseCode = "404", description = "No hash record exists for the provided system identifier.")
+    public Mono<MutableHttpResponse<HashFullResponse>> getFullView(
+            @PathVariable @Parameter(name = "id", description = "The deterministic entity UUID (Hash ID)", required = true, example = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d") UUID id
+    ) {
         return Mono.zip(
                         getHashUseCase.execute(new GetHashQuery(id)),
                         getAuditLogsUseCase.execute(id).collectList()
@@ -318,6 +331,8 @@ public class HashController {
                         tuple.getT2().stream().map(HashAuditResponse::fromDomain).toList()
                 ))
                 .map(HttpResponse::ok)
-                .doOnSubscribe(s -> log.info("[ACTION: GET_FULL_VIEW] [ID: {}] - Initiating 360-degree projection.", id));
+                .doOnSubscribe(s -> log.info("[ACTION: GET_FULL_VIEW] [ID: {}] - Initiating 360-degree projection.", id))
+                .doOnSuccess(res -> log.info("[ACTION: GET_FULL_VIEW] [ID: {}] - 360-degree projection successfully materialized.", id))
+                .doOnError(err -> log.error("[ACTION: GET_FULL_VIEW] [ID: {}] - 360-degree projection failed: {}", id, err.getMessage()));
     }
 }
