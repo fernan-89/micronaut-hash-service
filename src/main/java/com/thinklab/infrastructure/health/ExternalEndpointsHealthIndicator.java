@@ -10,9 +10,11 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import org.reactivestreams.Publisher;
+import org.slf4j.MDC;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.io.File;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -34,22 +36,18 @@ import java.util.Objects;
  *     isolating the pod from the routing mesh if critical outbound dependencies degrade.</li>
  * </ol>
  *
+ * <p><b>Execution Context Forensics (SRE Observability):</b>
+ * Natively scans the filesystem and environment variables to determine if the application is running
+ * on a local bare-metal OS, a Docker container, or a Kubernetes Pod. This context is emitted during
+ * startup and exposed via the HTTP health endpoint to accelerate distributed troubleshooting.
+ *
  * <p><b>Synchronous Barrier (ADR-007):</b>
  * During the {@link StartupEvent}, this component intentionally blocks the main initialization thread
  * using Reactor's blocking operators. This guarantees the application does not report as "Running"
  * and does not open its HTTP ports until all critical external dependencies have been fully verified.
  *
- * <p><b>Contractual Obligations:</b>
- * <ul>
- * <li><b>Constructor Injection (ADR-001):</b> Utilizes an explicit {@link Inject} constructor to guarantee
- *     deterministic bean wiring and AOP proxy reliability.</li>
- * <li><b>Thread Safety:</b> Thread-safe and stateless beyond immutable configuration properties.</li>
- * <li><b>Bounded Timeout Invariant:</b> The internal HTTP client connection timeout strictly remains under
- *     the orchestration probe threshold to prevent cascading thread starvation.</li>
- * </ul>
- *
- * @author ThinkLab
- * @version 1.5.0
+ * @author Thinklab Systems Engineering Team
+ * @version 1.7.1-NASA-SRE
  * @since 1.0
  */
 @Singleton
@@ -58,28 +56,13 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
 
     private final Map<String, String> targetEndpoints;
     private final String infrastructureHostname;
-
-    /**
-     * The resolved IPv4/IPv6 address of the underlying infrastructure node.
-     * Cached immutably at startup to prevent blocking network I/O operations
-     * during high-frequency runtime health evaluations.
-     */
     private final String infrastructureIpAddress;
+    private final String executionEnvironment;
 
-    /**
-     * Pre-configured, reusable native HTTP client.
-     * Bounded to a strict 2-second connection timeout to ensure deterministic
-     * health check resolution times and prevent resource exhaustion.
-     */
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(2))
             .build();
 
-    /**
-     * Explicit constructor for strict dependency injection (ADR-001) and property binding.
-     *
-     * @param targetEndpoints Map of logical endpoint aliases to target URIs. Optional/nullable.
-     */
     @Inject
     public ExternalEndpointsHealthIndicator(
             @Property(name = "warmup.endpoints") Map<String, String> targetEndpoints
@@ -87,49 +70,56 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
         this.targetEndpoints = targetEndpoints;
         this.infrastructureHostname = resolveHostname();
         this.infrastructureIpAddress = resolveIpAddress();
+        this.executionEnvironment = resolveExecutionEnvironment();
     }
 
     /**
-     * Intercepts the framework's StartupEvent to proactively initialize network paths.
-     * Generates structured telemetry logs identifying the current node's host and IP footprint.
-     * Implements a Synchronous Barrier (ADR-007) to prevent premature traffic routing.
-     *
-     * @param event The application startup event triggered by the IoC container. Must not be null.
+     * SRE Forensics: Asserts the System Boot context into the active thread's MDC.
+     * Required because async network boundaries (Java 11 HttpClient internal threads)
+     * and Reactor context cleanups can wipe the ThreadLocal MDC state during warmup.
      */
+    private void injectBootContext() {
+        MDC.put("traceId", "SYSTEM-BOOT");
+        MDC.put("clientIp", this.infrastructureIpAddress);
+        MDC.put("userAgent", "Micronaut-Engine/Startup");
+        // Fallbacks para garantir compatibilidade com diferentes layouts do Logback
+        MDC.put("ip", this.infrastructureIpAddress);
+        MDC.put("client", "Micronaut-Engine/Startup");
+    }
+
     @Override
     public void onApplicationEvent(StartupEvent event) {
         Objects.requireNonNull(event, "Application constraint violated: StartupEvent cannot be null.");
+
+        injectBootContext(); // 1. Assert MDC on the main thread before starting
 
         if (targetEndpoints == null || targetEndpoints.isEmpty()) {
             log.info("[EXTERNAL_HEALTH_WARMUP] - No external targets configured. Skipping warmup phase.");
             return;
         }
 
-        // Distinct log entries for high-visibility infrastructure footprint tracing
-        log.info("[EXTERNAL_HEALTH_WARMUP] - Hostname: [{}]", infrastructureHostname);
-        log.info("[EXTERNAL_HEALTH_WARMUP] - IP Address: [{}]", infrastructureIpAddress);
+        log.info("[EXTERNAL_HEALTH_WARMUP] - Environment: [{}]", executionEnvironment);
+        log.info("[EXTERNAL_HEALTH_WARMUP] - Hostname:    [{}]", infrastructureHostname);
+        log.info("[EXTERNAL_HEALTH_WARMUP] - IP Address:  [{}]", infrastructureIpAddress);
         log.info("[EXTERNAL_HEALTH_WARMUP] - Initiating proactive warmup for {} external dependencies...", targetEndpoints.size());
 
         try {
             Flux.fromIterable(targetEndpoints.entrySet())
                     .flatMap(this::checkEndpoint)
-                    .doOnNext(entry -> log.info("[EXTERNAL_HEALTH_WARMUP] - Warmup state: [{}] -> {}", entry.getKey(), entry.getValue()))
-                    // ADR-007: Synchronous barrier ensuring no HTTP traffic is served before external checks complete.
-                    // Caps the wait time to 10 seconds to prevent indefinite startup hangs.
+                    .doOnNext(entry -> {
+                        injectBootContext(); // 2. Assert MDC on the async worker thread before logging
+                        log.info("[EXTERNAL_HEALTH_WARMUP] - Warmup state: [{}] -> {}", entry.getKey(), entry.getValue());
+                    })
                     .blockLast(Duration.ofSeconds(10));
         } catch (Exception e) {
             log.warn("[EXTERNAL_HEALTH_WARMUP] ⚠️ Warmup barrier interrupted or timed out. Reason: {}", e.getMessage());
+        } finally {
+            // 3. CRITICAL: Restore MDC on the main thread after blockLast() cleans it up,
+            // ensuring the next startup observers (like MongoWarmup) don't start blind.
+            injectBootContext();
         }
     }
 
-    /**
-     * Evaluates the current health state of all configured external endpoints.
-     *
-     * <p>Invoked periodically by Micronaut's actuator subsystem. Executes all health checks
-     * concurrently via Project Reactor and aggregates results into a unified topology state.
-     *
-     * @return A Publisher emitting the aggregated health status and diagnostic map.
-     */
     @Override
     public Publisher<HealthResult> getResult() {
         if (targetEndpoints == null || targetEndpoints.isEmpty()) {
@@ -137,6 +127,7 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
                     .status(HealthStatus.UP)
                     .details(Map.of(
                             "message", "No external endpoints configured for telemetry.",
+                            "resolvedEnvironment", executionEnvironment,
                             "resolvedHostname", infrastructureHostname,
                             "resolvedIpAddress", infrastructureIpAddress
                     ))
@@ -147,14 +138,13 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
                 .flatMap(this::checkEndpoint)
                 .collectMap(Map.Entry::getKey, Map.Entry::getValue)
                 .map(details -> {
-                    // Strict evaluation: Any degraded outbound dependency cascades to a DOWN state.
                     boolean hasFailures = details.values().stream()
                             .anyMatch(status -> status.toString().startsWith("DOWN"));
 
                     HealthStatus aggregatedStatus = hasFailures ? HealthStatus.DOWN : HealthStatus.UP;
 
-                    // Create a mutable copy of details to append metadata without side-effects
                     Map<String, Object> responseTopology = new HashMap<>(details);
+                    responseTopology.put("resolvedEnvironment", executionEnvironment);
                     responseTopology.put("resolvedHostname", infrastructureHostname);
                     responseTopology.put("resolvedIpAddress", infrastructureIpAddress);
 
@@ -165,15 +155,6 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
                 });
     }
 
-    /**
-     * Dispatches a deterministic, non-blocking HTTP GET request to the specified target.
-     *
-     * <p>Discards the HTTP response body immediately to enforce an O(1) memory footprint
-     * per request. Safely handles and wraps network/DNS exceptions to maintain reactive stream integrity.
-     *
-     * @param endpointDefinition A Key-Value pair representing the logical alias and target URI. Must not be null.
-     * @return A Mono emitting a Key-Value pair containing the logical alias and resolved health state. Never errors.
-     */
     private Mono<Map.Entry<String, String>> checkEndpoint(Map.Entry<String, String> endpointDefinition) {
         String alias = endpointDefinition.getKey();
         String url = endpointDefinition.getValue();
@@ -181,61 +162,54 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .GET()
-                .timeout(Duration.ofSeconds(3)) // Absolute timeout per request
+                .timeout(Duration.ofSeconds(3))
                 .build();
 
         return Mono.fromFuture(httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding()))
                 .map(response -> {
                     boolean isUp = response.statusCode() >= 200 && response.statusCode() < 400;
                     String statusMessage = isUp ? "UP" : "DOWN (HTTP " + response.statusCode() + ")";
-
                     return (Map.Entry<String, String>) Map.entry(alias, statusMessage);
                 })
                 .onErrorResume(error -> {
+                    injectBootContext(); // Assert MDC on error threads
                     log.debug("[EXTERNAL_HEALTH_PROBE] - Diagnostic failure for [{}] ({}) - Reason: {}", alias, url, error.getMessage());
                     return Mono.just((Map.Entry<String, String>) Map.entry(alias, "DOWN (" + error.getMessage() + ")"));
                 });
     }
 
-    /**
-     * Resolves the current execution environment hostname using OS parameters or network interfaces.
-     * Fails gracefully to ensure the application starts even in strictly constrained container meshes.
-     *
-     * @return String containing the resolved hostname or alternative diagnostic string.
-     */
+    private String resolveExecutionEnvironment() {
+        String osName = System.getProperty("os.name", "Unknown OS");
+        String osArch = System.getProperty("os.arch", "Unknown Arch");
+        String osContext = String.format("(%s %s)", osName, osArch);
+        try {
+            boolean isKubernetes = System.getenv("KUBERNETES_SERVICE_HOST") != null;
+            boolean isDocker = new File("/.dockerenv").exists() || new File("/run/.containerenv").exists();
+
+            if (isKubernetes) return "Kubernetes Pod " + osContext;
+            else if (isDocker) return "Docker Container " + osContext;
+            else return "Bare-Metal / Local OS " + osContext;
+        } catch (SecurityException e) {
+            return "Restricted Environment " + osContext;
+        }
+    }
+
     private String resolveHostname() {
         String envHost = System.getenv("HOSTNAME");
-        if (envHost != null && !envHost.isBlank()) {
-            return envHost;
-        }
-
+        if (envHost != null && !envHost.isBlank()) return envHost;
         String winHost = System.getenv("COMPUTERNAME");
-        if (winHost != null && !winHost.isBlank()) {
-            return winHost;
-        }
-
+        if (winHost != null && !winHost.isBlank()) return winHost;
         try {
             return InetAddress.getLocalHost().getHostName();
         } catch (Exception e) {
-            log.warn("[HEALTH_INIT] - Failed to resolve local network hostname. Falling back to unknown.", e);
             return "unknown-host";
         }
     }
 
-    /**
-     * Resolves the current execution environment IP address bound to the local network interface.
-     *
-     * <p>Utilizes {@link InetAddress#getLocalHost()} to extract the primary routed IP.
-     * Fails gracefully to a placeholder string to ensure orchestration systems (e.g., Kubernetes)
-     * do not kill the pod during initialization if network interfaces are not fully ready.
-     *
-     * @return String containing the resolved IP address or alternative diagnostic string.
-     */
     private String resolveIpAddress() {
         try {
             return InetAddress.getLocalHost().getHostAddress();
         } catch (Exception e) {
-            log.warn("[HEALTH_INIT] - Failed to resolve local network IP address. Falling back to unknown.", e);
             return "unknown-ip";
         }
     }

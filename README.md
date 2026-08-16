@@ -1,6 +1,6 @@
 # Thinklab Hash Service
 
-**Version:** v3.4.1-NASA-SRE-PROD
+**Version:** v3.5.2-NASA-SRE-PROD
 
 **Status:** Production-Ready (Mission-Critical)
 
@@ -16,7 +16,7 @@ Designed under strict Site Reliability Engineering (SRE) and Zero-Trust principl
 * **Framework:** Micronaut 4.4.2 (AOT Optimized, reflection-free DI and Serde)
 * **Reactive Engine:** Project Reactor (Mono / Flux)
 * **Persistence:** Reactive MongoDB utilizing BSON Binary UUID Subtype 4 for optimized indexing
-* **Observability:** OpenTelemetry (W3C Standard), SLF4J, Logback (Async), and Project Reactor Hooks
+* **Observability:** OpenTelemetry (W3C Standard), SLF4J, Logback (Async), SRE Forensics, and Project Reactor Hooks
 * **Security & Containerization:** Google Distroless (nonroot), Read-Only Root Filesystems, Zero-Trust Capabilities
 * **Testing Suite:** JUnit 5, Mockito (Unit), and Testcontainers (Integration)
 * **Documentation:** OpenAPI 3.0 / Swagger (Generated statically at compile-time)
@@ -71,6 +71,14 @@ The deployment artifact and infrastructure manifests are hardened against supply
 * **Eradication of Legacy Plugins:** The build relies exclusively on Micronaut native AOT (Ahead-of-Time) plugins, ensuring deterministic dependency resolution, compile-time service-loading, and zero legacy classpath conflicts.
 * **Distroless & Non-Root Execution:** The production image (`gcr.io/distroless/java21-debian12:nonroot`) executes strictly as UID 65532. It contains no shell (`/bin/sh`) or OS package managers, mathematically neutralizing reverse-shell and container escape injections.
 * **Immutable Filesystems:** Kubernetes deployments enforce `readOnlyRootFilesystem: true` and drop `ALL` Linux capabilities, establishing absolute immutability during runtime.
+
+### 6. Execution Context Forensics & SRE Telemetry (ADR-012)
+
+Advanced runtime observability guarantees zero blind spots throughout the entire application lifecycle.
+
+* **Pre-Flight Boot Context & Thread Propagation:** Programmatically injects a baseline `SYSTEM-BOOT` context into the SLF4J MDC at `Application.main()`, asserting it across worker pools and reactive boundaries to eradicate `[NONE]` logs during warmup.
+* **Automated Environment Probing:** Natively scans filesystem signatures (`/.dockerenv`) and orchestration variables (`KUBERNETES_SERVICE_HOST`) at startup to explicitly emit the runtime execution tier (e.g., `Kubernetes Pod` vs `Bare-Metal`).
+* **Edge Caller Forensics & Asynchronous Reverse DNS:** Enriches ingress requests by capturing target virtual hosts (`Host` header), request provenance (`Origin`/`Referer`), and external client hostnames via non-blocking asynchronous lookups bound to `Schedulers.boundedElastic()`.
 
 ---
 

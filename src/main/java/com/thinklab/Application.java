@@ -2,15 +2,13 @@ package com.thinklab;
 
 import com.thinklab.infrastructure.telemetry.ReactorMdcBridge;
 import io.micronaut.runtime.Micronaut;
-import io.swagger.v3.oas.annotations.OpenAPIDefinition;
-import io.swagger.v3.oas.annotations.info.Contact;
-import io.swagger.v3.oas.annotations.info.Info;
-import io.swagger.v3.oas.annotations.info.License;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import reactor.core.publisher.Hooks;
 
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import java.net.InetAddress;
 import java.security.Security;
 import java.util.TimeZone;
 
@@ -27,29 +25,22 @@ import java.util.TimeZone;
  * <ul>
  * <li><b>Universal UTC Invariant:</b> Forcefully normalizes the JVM default timezone to UTC to prevent
  *     distributed time drift across cryptographic token lifecycles.</li>
- * <li><b>Reactive Context Propagation (MDC Bridge):</b> Enables automatic Project Reactor hooks and MDC bridges
- *     to inherit Mapped Diagnostic Context states across non-blocking asynchronous thread boundaries.</li>
+ * <li><b>Execution Context Forensics:</b> Injects a pre-flight MDC (Mapped Diagnostic Context) state
+ *     to ensure startup logs display host IPs instead of [NONE].</li>
+ * <li><b>Reactive Context Propagation (MDC Bridge):</b> Enables automatic Project Reactor hooks to
+ *     inherit MDC states across non-blocking asynchronous thread boundaries.</li>
  * <li><b>Unhandled Exception Guard:</b> Configures a global uncaught exception handler to intercept
  *     catastrophic thread deaths bypassing reactive contexts.</li>
  * <li><b>Cryptographic Provider Injection:</b> Registers the Bouncy Castle security provider to satisfy
  *     advanced hashing algorithm dependencies.</li>
- * <li><b>Fail-Fast Bootstrapping:</b> Intercepts container initialization failures and exits cleanly with
- *     a non-zero status code for orchestration mesh awareness.</li>
  * </ul>
  *
- * @author ThinkLab
- * @version 1.2.0
+ * <p><i>Note: OpenAPI/Swagger definitions have been decentralized to OpenApiConfig.java (ADR-011).</i>
+ *
+ * @author Thinklab Systems Engineering Team
+ * @version 1.5.0-NASA-SRE-PROD
  * @since 1.0
  */
-@OpenAPIDefinition(
-        info = @Info(
-                title = "hash-&-serial-registry",
-                version = "1.0.0",
-                description = "High-performance reactive service for generating, auditing, and managing the lifecycle of cryptographic tokens.",
-                contact = @Contact(name = "Thinklab Staff Engineering", email = "staff@thinklab.com"),
-                license = @License(name = "Apache 2.0", url = "https://thinklab.com/licenses/LICENSE-2.0")
-        )
-)
 public class Application {
 
     private static final Logger log = LoggerFactory.getLogger(Application.class);
@@ -60,22 +51,36 @@ public class Application {
      * @param args Command line arguments passed during startup. Must not be null.
      */
     public static void main(String[] args) {
+
         // 1. Mission Critical: Enforce UTC globally to prevent time-drift bugs in distributed tokens
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
 
-        // 2. Mission Critical: Enable automatic MDC propagation hooks & Reactor-to-MDC bridge
+        // 2. SRE Forensics: Inject System Boot Context into the MDC to eliminate [NONE] tags during warmup
+        try {
+            MDC.put("traceId", "SYSTEM-BOOT");
+            MDC.put("clientIp", InetAddress.getLocalHost().getHostAddress());
+            MDC.put("userAgent", "Micronaut-Engine/Startup");
+            // If your logback.xml uses "ip" or "client" instead of standard keys, we duplicate them securely:
+            MDC.put("ip", InetAddress.getLocalHost().getHostAddress());
+            MDC.put("client", "Micronaut-Engine/Startup");
+        } catch (Exception e) {
+            MDC.put("clientIp", "INTERNAL-MESH");
+            MDC.put("ip", "INTERNAL-MESH");
+        }
+
+        // 3. Mission Critical: Enable automatic MDC propagation hooks & Reactor-to-MDC bridge
         Hooks.enableAutomaticContextPropagation();
         ReactorMdcBridge.register();
 
-        // 3. Mission Critical: Catch catastrophic thread deaths that bypass the Reactive context
+        // 4. Mission Critical: Catch catastrophic thread deaths that bypass the Reactive context
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) ->
                 log.error("[JVM_FATAL] - Unhandled exception in thread [{}]: {}", thread.getName(), throwable.getMessage(), throwable)
         );
 
-        // 4. Mission Critical: Inject Bouncy Castle to satisfy native JVM cryptographic dependencies
+        // 5. Mission Critical: Inject Bouncy Castle to satisfy native JVM cryptographic dependencies
         Security.addProvider(new BouncyCastleProvider());
 
-        // 5. Boot: Use the Builder for explicit control over startup arguments and container lifecycle
+        // 6. Boot: Use the Builder for explicit control over startup arguments and container lifecycle
         try {
             Micronaut.build(args)
                     .mainClass(Application.class)

@@ -11,9 +11,11 @@ import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.BsonDocument;
 import org.bson.BsonInt32;
+import org.slf4j.MDC;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
+import java.net.InetAddress;
 import java.time.Duration;
 import java.util.Objects;
 
@@ -47,11 +49,11 @@ import java.util.Objects;
  * <li><b>Constructor Injection (ADR-001):</b> Utilizes an explicit {@link Inject} constructor to guarantee
  *     deterministic bean wiring and AOP proxy reliability.</li>
  * <li><b>Proactive Connection Warm-Up:</b> Establishes database socket connectivity synchronously on startup.</li>
- * <li><b>Structured Telemetry & Observability:</b> Emits latency metrics and standardized diagnostic markers for centralized logging.</li>
+ * <li><b>Structured Telemetry & Observability:</b> Emits sanitized topology hosts, latency metrics, and standardized diagnostic markers.</li>
  * </ul>
  *
- * @author ThinkLab
- * @version 2.7.0
+ * @author Thinklab Systems Engineering Team
+ * @version 2.9.1-NASA-SRE
  * @since 1.0
  */
 @Singleton
@@ -60,12 +62,14 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
 
     private final MongoClient mongoClient;
     private final String applicationDatabase;
+    private final String clusterHosts;
+    private final String infrastructureIpAddress;
     private final ApplicationContext applicationContext;
 
     /**
      * Explicit constructor for strict dependency injection (ADR-001) and property binding.
-     * Extracts the target database dynamically from the MongoDB URI to avoid configuration duplication.
-     * Includes a failsafe to prevent malformed environment variables from crashing the context.
+     * Extracts the target database and sanitized cluster hosts dynamically from the MongoDB URI
+     * to avoid configuration duplication and enhance SRE telemetry logs.
      *
      * @param mongoClient        The reactive MongoDB client driver instance. Must not be null.
      * @param mongoUri           The full MongoDB connection string injected from application.yml.
@@ -80,21 +84,54 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
     ) {
         this.mongoClient = Objects.requireNonNull(mongoClient, "Application constraint violated: MongoClient cannot be null.");
         this.applicationContext = Objects.requireNonNull(applicationContext, "Application constraint violated: ApplicationContext cannot be null.");
+        this.infrastructureIpAddress = resolveIpAddress();
 
         String parsedDatabase = null;
+        String parsedHosts = "unknown-cluster";
 
         try {
-            // Dynamically parse the URI to extract the target database, preventing configuration drift
+            // Dynamically parse the URI to extract target database and hosts safely (stripping passwords)
             ConnectionString connectionString = new ConnectionString(mongoUri);
             parsedDatabase = connectionString.getDatabase();
+
+            // Extracts all hosts (supports Replica Sets) and joins them cleanly
+            if (connectionString.getHosts() != null && !connectionString.getHosts().isEmpty()) {
+                parsedHosts = String.join(",", connectionString.getHosts());
+            }
         } catch (IllegalArgumentException e) {
             // Failsafe: Prevents malformed URIs from crashing the application context during bean instantiation.
             // The passive circuit breaker will handle the actual connection failure downstream.
-            log.warn("[MONGODB_WARMUP] ⚠️ URI Parse Error: Failed to extract target database dynamically. Reason: {}. Falling back to 'admin'...", e.getMessage());
+            log.warn("[MONGODB_WARMUP] ⚠️ URI Parse Error: Failed to extract topology dynamically. Reason: {}. Falling back to 'admin'...", e.getMessage());
         }
 
         // Graceful fallback to 'admin' if the URI lacks a specific database path or parsing fails.
         this.applicationDatabase = (parsedDatabase != null && !parsedDatabase.isBlank()) ? parsedDatabase : "admin";
+        this.clusterHosts = parsedHosts;
+    }
+
+    /**
+     * SRE Forensics: Asserts the System Boot context into the active thread's MDC.
+     * Required because the MongoDB Reactive Streams Driver utilizes its own internal thread pools
+     * (e.g., async-driver) which do not inherit the parent ThreadLocal MDC state.
+     */
+    private void injectBootContext() {
+        MDC.put("traceId", "SYSTEM-BOOT");
+        MDC.put("clientIp", this.infrastructureIpAddress);
+        MDC.put("userAgent", "Micronaut-Engine/Startup");
+        // Fallbacks para garantir compatibilidade com diferentes layouts do Logback
+        MDC.put("ip", this.infrastructureIpAddress);
+        MDC.put("client", "Micronaut-Engine/Startup");
+    }
+
+    /**
+     * Resolves the current execution environment IP address bound to the local network interface.
+     */
+    private String resolveIpAddress() {
+        try {
+            return InetAddress.getLocalHost().getHostAddress();
+        } catch (Exception e) {
+            return "unknown-ip";
+        }
     }
 
     /**
@@ -109,7 +146,9 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
     public void onApplicationEvent(StartupEvent event) {
         Objects.requireNonNull(event, "Application constraint violated: StartupEvent cannot be null.");
 
-        log.info("[MONGODB_WARMUP] ➔ Initializing SDAM topology discovery... [component=mongodb | status=INIT]");
+        injectBootContext(); // 1. Assert MDC on main thread before starting
+
+        log.info("[MONGODB_WARMUP] ➔ Initializing SDAM topology discovery... [component=mongodb | status=INIT | host={}]", clusterHosts);
         log.debug("[MONGODB_WARMUP] ➔ Target database dynamically resolved from URI: [{}]", applicationDatabase);
 
         BsonDocument pingCommand = new BsonDocument("ping", new BsonInt32(1));
@@ -118,7 +157,10 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
         try {
             // Phase 1: Cluster Warmup via Admin DB
             Mono.from(mongoClient.getDatabase("admin").runCommand(pingCommand))
-                    .doOnSuccess(adminRes -> log.debug("[MONGODB_WARMUP] ✔ Cluster connectivity verified. Checking application database: [{}]", applicationDatabase))
+                    .doOnSuccess(adminRes -> {
+                        injectBootContext(); // Assert MDC on driver thread
+                        log.debug("[MONGODB_WARMUP] ✔ Cluster connectivity verified. Checking application database: [{}]", applicationDatabase);
+                    })
 
                     // Phase 2: Contextual verification via Application DB
                     .flatMap(adminRes -> Mono.from(mongoClient.getDatabase(applicationDatabase).runCommand(pingCommand)))
@@ -128,6 +170,7 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
 
                     // --- PROGRESSIVE RETRY POLICY ---
                     .retryWhen(Retry.from(retrySignals -> retrySignals.flatMap(rs -> {
+                        injectBootContext(); // Assert MDC on retry scheduler thread
                         long attempt = rs.totalRetries();
                         Throwable error = rs.failure();
 
@@ -149,16 +192,18 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
 
                     // Success Telemetry
                     .doOnSuccess(appResult -> {
+                        injectBootContext(); // Assert MDC on driver thread
                         long duration = System.currentTimeMillis() - startTime;
-                        log.info("[MONGODB_WARMUP] ✔ Telemetry established successfully. [component=mongodb | status=UP | targetDatabase={} | latency={}ms]",
-                                applicationDatabase, duration);
+                        log.info("[MONGODB_WARMUP] ✔ Telemetry established successfully. [component=mongodb | status=UP | host={} | db={} | latency={}ms]",
+                                clusterHosts, applicationDatabase, duration);
                     })
 
                     // Terminal Failure Handling
                     .doOnError(error -> {
+                        injectBootContext(); // Assert MDC on driver thread
                         long duration = System.currentTimeMillis() - startTime;
-                        log.error("[MONGODB_WARMUP] ✖ CRITICAL: Topology discovery definitively failed! Initiating container shutdown. [component=mongodb | status=DOWN | targetDatabase={} | latency={}ms | cause='{}']",
-                                applicationDatabase, duration, error.getMessage(), error);
+                        log.error("[MONGODB_WARMUP] ✖ CRITICAL: Topology discovery definitively failed! Initiating container shutdown. [component=mongodb | status=DOWN | host={} | db={} | latency={}ms | cause='{}']",
+                                clusterHosts, applicationDatabase, duration, error.getMessage(), error);
 
                         // Gracefully stops the IoC container, resulting in a SIGTERM for Kubernetes to handle
                         applicationContext.stop();
@@ -168,10 +213,16 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
                     // Accommodates the 105 seconds of progressive retry delays + connection timeouts.
                     .block(Duration.ofSeconds(120));
 
+            injectBootContext(); // Assert before the final block success log
             log.debug("[MONGODB_WARMUP] Warmup lifecycle completed successfully.");
 
         } catch (Exception e) {
+            injectBootContext();
             log.error("[MONGODB_WARMUP] 🛑 Synchronous barrier caught terminal error. Awaiting context shutdown...");
+        } finally {
+            // CRITICAL: Restore MDC on the main thread after block() cleans it up,
+            // ensuring the remaining startup process (Netty binding) doesn't run blind.
+            injectBootContext();
         }
     }
 }
